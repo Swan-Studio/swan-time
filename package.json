@@ -1,0 +1,99 @@
+{
+  "name": "swan-time",
+  "version": "1.0.0",
+  "description": "Swan Studio menubar time tracker — posts to Monday.com",
+  "main": "dist-electron/main.js",
+  "author": "Swan Studio",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"npm:dev:electron\"",
+    "dev:electron": "wait-on http://localhost:5173 && tsc -p electron/tsconfig.json && electron .",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build": "npm run build:renderer && npm run build:electron",
+    "package": "npm run build && electron-builder --mac",
+    "rebuild": "electron-rebuild -f -w keytar"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.1",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.3",
+    "keytar": "^7.9.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "@types/node": "^20.12.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.4",
+    "typescript": "^5.4.5",
+    "vite": "^5.3.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "studio.swan.time",
+    "productName": "Swan Time",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["universal"]
+        }
+      ],
+      "artifactName": "Swan-Time-${version}-${arch}.${ext}",
+      "extendInfo": {
+        "LSUIElement": 1,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "swan-time"
+            ],
+            "CFBundleURLName": "studio.swan.time"
+          }
+        ]
+      }
+    },
+    "dmg": {
+      "title": "Swan Time ${version}",
+      "contents": [
+        { "x": 130, "y": 220, "type": "file" },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "protocols": [
+      {
+        "name": "swan-time",
+        "schemes": [
+          "swan-time"
+        ]
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Gruzzo97",
+        "repo": "swan-time",
+        "private": true
+      }
+    ]
+  }
+}

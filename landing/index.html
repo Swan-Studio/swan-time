@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Swan Time — install</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --paper: #fafaf7;
+        --ink: #080822;
+        --accent: #ff4e01;
+        --pink: #eb0091;
+        --sun: #fced17;
+        --mute: #7a7a85;
+        --line: rgba(8, 8, 34, 0.08);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: 'Inter Tight', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .gradient-bar {
+        height: 3px;
+        background: linear-gradient(135deg, var(--pink) 0%, var(--accent) 50%, var(--sun) 100%);
+      }
+      .container {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 64px 24px 80px;
+      }
+      h1 {
+        font-family: 'Fraunces', serif;
+        font-weight: 500;
+        font-size: 56px;
+        letter-spacing: -0.02em;
+        margin: 0 0 8px;
+        line-height: 1.05;
+      }
+      .lede {
+        font-size: 17px;
+        color: var(--mute);
+        line-height: 1.5;
+        margin: 0 0 32px;
+        max-width: 540px;
+      }
+      .download {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--ink);
+        color: var(--paper);
+        text-decoration: none;
+        padding: 14px 22px;
+        border-radius: 10px;
+        font-weight: 500;
+        font-size: 15px;
+        transition: opacity 0.15s;
+      }
+      .download:hover {
+        opacity: 0.92;
+      }
+      .download .arrow {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        opacity: 0.7;
+      }
+      .version {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: var(--mute);
+        margin-left: 16px;
+      }
+      .steps {
+        margin: 56px 0 0;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
+      }
+      .steps li {
+        counter-increment: step;
+        padding: 18px 0;
+        border-top: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: 32px 1fr;
+        gap: 16px;
+      }
+      .steps li:before {
+        content: counter(step);
+        font-family: 'Fraunces', serif;
+        font-size: 24px;
+        color: var(--accent);
+        line-height: 1;
+        margin-top: 2px;
+      }
+      .steps h3 {
+        margin: 0 0 4px;
+        font-size: 15px;
+        font-weight: 500;
+      }
+      .steps p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--mute);
+        line-height: 1.55;
+      }
+      kbd {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        padding: 2px 6px;
+        background: rgba(8, 8, 34, 0.06);
+        border-radius: 4px;
+      }
+      .footer {
+        margin-top: 64px;
+        font-size: 12px;
+        color: var(--mute);
+      }
+      a {
+        color: var(--ink);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="gradient-bar"></div>
+    <div class="container">
+      <h1>Swan Time</h1>
+      <p class="lede">
+        A floating menubar timer that posts to your personal Monday tracker board. Built for the
+        Swan team — log time in five seconds without leaving what you're doing.
+      </p>
+
+      <a class="download" href="#" id="download" download>
+        Download for Mac
+        <span class="arrow">↓</span>
+      </a>
+      <span class="version" id="version">latest</span>
+
+      <ol class="steps">
+        <li>
+          <div>
+            <h3>Open the .dmg, drag Swan Time into Applications</h3>
+            <p>
+              First launch may show "macOS can't verify the developer." If so, right-click the app
+              → Open → Open. You'll only need to do this once.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Sign in with your Monday account</h3>
+            <p>
+              Use the Swan email you log into Monday with. The app finds your personal "[Name] Time
+              Tracker" board automatically — if it can't, you'll get a picker.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Press <kbd>⌘ ⇧ T</kbd> to summon the widget</h3>
+            <p>
+              Type what you're working on, pick client + division + category, hit Start. Stop & log
+              when done. The Today view shows what you've logged. Settings → enable AI for
+              auto-categorisation and natural-language batch entry.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="footer">
+        Internal Swan Studio tool · questions to dean@swan.studio
+      </div>
+    </div>
+    <script>
+      // Replace with your actual GitHub release latest URL once published.
+      // Example: https://github.com/swan-studio/swan-time/releases/latest/download/Swan-Time-1.0.0-universal.dmg
+      const DOWNLOAD_URL =
+        'https://github.com/swan-studio/swan-time/releases/latest/download/Swan-Time-latest.dmg';
+      document.getElementById('download').href = DOWNLOAD_URL;
+    </script>
+  </body>
+</html>

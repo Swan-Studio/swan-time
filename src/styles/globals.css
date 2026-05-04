@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter Tight', ui-sans-serif, system-ui, sans-serif;
+  color: #080822;
+  font-feature-settings: 'ss01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+}
+
+.draggable { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
+
+input, button, select, textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  outline: none;
+}
+
+button { cursor: default; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: rgba(8,8,34,0.18); border-radius: 999px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+.tabular { font-variant-numeric: tabular-nums; }
