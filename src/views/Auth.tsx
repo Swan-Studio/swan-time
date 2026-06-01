@@ -39,7 +39,7 @@ export function Auth({ onAuthed }: Props) {
   return (
     <div className="flex flex-col h-full px-5 pt-4 pb-5 animate-rise">
       <div className="draggable mb-4">
-        <h1 className="font-display text-[20px] font-medium tracking-tight">Swan Time</h1>
+        <h1 className="text-[20px] font-medium tracking-tight">Swan Time</h1>
         <p className="text-[12px] text-mute mt-1">
           Connect your Monday account to log time to your tracker board.
         </p>
@@ -67,7 +67,7 @@ export function Auth({ onAuthed }: Props) {
               value={token}
               onChange={e => setToken(e.target.value)}
               placeholder="Monday API token"
-              className="w-full px-3 py-2 bg-chip rounded-md text-[12px] font-mono"
+              className="w-full px-3 py-2 bg-chip rounded-md text-[12px] "
             />
             <button
               onClick={useManual}

@@ -27,9 +27,9 @@ export default {
         '2xl': '18px'
       },
       fontFamily: {
-        display: ['"Fraunces"', 'ui-serif', 'Georgia', 'serif'],
+        display: ['"Inter Tight"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         sans: ['"Inter Tight"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace']
+        mono: ['"Inter Tight"', 'ui-sans-serif', 'system-ui', 'sans-serif']
       },
       fontSize: {
         timer: ['56px', { lineHeight: '1', letterSpacing: '-0.02em' }]

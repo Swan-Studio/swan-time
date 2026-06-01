@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { swan } from '../lib/swan';
 import { formatElapsed } from '../lib/format';
 import type { Running as RunningT } from '../lib/constants';
@@ -9,14 +9,29 @@ type Props = {
   onNeedsCategory: () => void;
 };
 
+function initialSeconds(t: NonNullable<RunningT>): number {
+  const acc = t.accumulatedMs ?? 0;
+  const ms = t.pausedAt ? acc : acc + (Date.now() - t.startedAt);
+  return Math.floor(ms / 1000);
+}
+
 export function Running({ timer, onStopped, onNeedsCategory }: Props) {
-  const [seconds, setSeconds] = useState(Math.floor((Date.now() - timer.startedAt) / 1000));
+  const [seconds, setSeconds] = useState(() => initialSeconds(timer));
+  const [paused, setPaused] = useState(!!timer.pausedAt);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const off = swan.onTimerTick(setSeconds);
     return () => off();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    };
   }, []);
 
   async function stop() {
@@ -26,13 +41,35 @@ export function Running({ timer, onStopped, onNeedsCategory }: Props) {
     }
     setBusy(true);
     setError(null);
-    const res = await swan.stopTimer();
-    setBusy(false);
-    if (!res.ok) {
-      setError(res.error || 'Failed to log entry');
+    try {
+      const res = await swan.stopTimer();
+      if (!res.ok) {
+        setError(res.error || 'Failed to log entry');
+        return;
+      }
+      onStopped(res.minutes ? { minutes: res.minutes } : undefined);
+    } catch (e: any) {
+      setError(e?.message || String(e) || 'Failed to log entry');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function togglePause() {
+    const next = paused ? await swan.resumeTimer() : await swan.pauseTimer();
+    setPaused(!!next?.pausedAt);
+  }
+
+  async function discard() {
+    if (!confirmDiscard) {
+      setConfirmDiscard(true);
+      if (confirmTimer.current) clearTimeout(confirmTimer.current);
+      confirmTimer.current = setTimeout(() => setConfirmDiscard(false), 3000);
       return;
     }
-    onStopped(res.minutes ? { minutes: res.minutes } : undefined);
+    if (confirmTimer.current) clearTimeout(confirmTimer.current);
+    await swan.cancelTimer();
+    onStopped();
   }
 
   const breadcrumb = [timer.clientName, timer.division, timer.category].filter(Boolean).join(' · ') || 'No category yet';
@@ -41,25 +78,47 @@ export function Running({ timer, onStopped, onNeedsCategory }: Props) {
     <div className="flex flex-col h-full px-5 pt-4 pb-5 animate-rise">
       <div className="flex items-center justify-between draggable">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-swan-gradient animate-livepulse shadow-[0_0_8px_rgba(255,78,1,0.4)]" />
-          <span className="text-[10px] uppercase tracking-[0.12em] text-accent font-semibold">
-            Running
+          <span
+            className={
+              paused
+                ? 'w-2 h-2 rounded-full bg-mute'
+                : 'w-2 h-2 rounded-full bg-swan-gradient animate-livepulse shadow-[0_0_8px_rgba(255,78,1,0.4)]'
+            }
+          />
+          <span
+            className={`text-[10px] uppercase tracking-[0.12em] font-semibold ${
+              paused ? 'text-mute' : 'text-accent'
+            }`}
+          >
+            {paused ? 'Paused' : 'Running'}
           </span>
         </div>
         <button
-          onClick={() => swan.hide()}
-          className="no-drag text-[11px] uppercase tracking-[0.08em] text-mute hover:text-ink font-medium"
+          onClick={togglePause}
+          disabled={busy}
+          className="no-drag text-mute hover:text-ink transition-colors disabled:opacity-40"
+          title={paused ? 'Resume' : 'Pause'}
+          aria-label={paused ? 'Resume timer' : 'Pause timer'}
         >
-          Hide
+          {paused ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <rect x="6" y="5" width="4" height="14" rx="1" />
+              <rect x="14" y="5" width="4" height="14" rx="1" />
+            </svg>
+          )}
         </button>
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center text-center">
-        <div className="font-mono tabular text-timer text-ink font-medium">
+        <div className="tabular text-timer text-ink font-medium">
           {formatElapsed(seconds)}
         </div>
         <div className="mt-4 max-w-full">
-          <div className="font-display text-[17px] text-ink leading-snug truncate px-4">
+          <div className="text-[17px] text-ink leading-snug truncate px-4">
             {timer.name}
           </div>
           <div className="text-[11px] text-mute mt-1 truncate px-4">{breadcrumb}</div>
@@ -92,6 +151,18 @@ export function Running({ timer, onStopped, onNeedsCategory }: Props) {
           {busy ? 'Logging…' : 'Stop & log'}
         </button>
       </div>
+
+      <button
+        onClick={discard}
+        disabled={busy}
+        className={`mt-2 mx-auto text-[11px] no-drag transition-colors disabled:opacity-50 ${
+          confirmDiscard
+            ? 'text-accent font-medium'
+            : 'text-mute hover:text-ink'
+        }`}
+      >
+        {confirmDiscard ? 'Tap again to discard' : 'Discard timer'}
+      </button>
     </div>
   );
 }

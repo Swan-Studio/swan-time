@@ -9,8 +9,9 @@ export function formatElapsed(totalSeconds: number): string {
 }
 
 export function minutesToHm(minutes: number): string {
-  if (minutes < 60) return `${minutes}m`;
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
+  const total = Math.round(minutes);
+  if (total < 60) return `${total}m`;
+  const h = Math.floor(total / 60);
+  const m = total % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }

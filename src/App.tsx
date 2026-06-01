@@ -8,6 +8,8 @@ import { Today } from './views/Today';
 import { Settings } from './views/Settings';
 import { Batch } from './views/Batch';
 import { PickBoard } from './views/PickBoard';
+import { Levels } from './views/Levels';
+import { Nudge } from './views/Nudge';
 import type { Running as RunningT } from './lib/constants';
 
 type Screen =
@@ -19,7 +21,9 @@ type Screen =
   | 'stopgate'
   | 'today'
   | 'settings'
-  | 'batch';
+  | 'batch'
+  | 'levels'
+  | 'nudge';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('loading');
@@ -34,7 +38,9 @@ export default function App() {
       setScreen('auth');
       return;
     }
-    setUserName(auth.userName);
+    const settings = await swan.getSettings();
+    const displayName = settings.displayNameOverride?.trim() || auth.userName;
+    setUserName(displayName);
     if (!auth.boardId) {
       // Auto-resolution failed (regex mismatch). Send user to the picker.
       setBoardWarning(null);
@@ -57,6 +63,10 @@ export default function App() {
     const offMode = swan.onWidgetMode(async mode => {
       if (mode === 'batch') {
         setScreen('batch');
+      } else if (mode === 'nudge') {
+        const t = await swan.getRunning();
+        setTimer(t);
+        setScreen('nudge');
       } else {
         const t = await swan.getRunning();
         setTimer(t);
@@ -93,7 +103,7 @@ export default function App() {
       )}
       {screen === 'loading' && (
         <div className="flex items-center justify-center h-full">
-          <span className="font-display text-[14px] text-mute tracking-tight animate-pulse">Swan Time</span>
+          <span className="text-[14px] text-mute tracking-tight animate-pulse">Swan Time</span>
         </div>
       )}
       {screen === 'auth' && (
@@ -104,7 +114,14 @@ export default function App() {
         />
       )}
       {screen === 'pickBoard' && (
-        <PickBoard userName={userName} onPicked={refresh} />
+        <PickBoard
+          userName={userName}
+          onPicked={refresh}
+          onSignOut={async () => {
+            await swan.authSignOut();
+            setScreen('auth');
+          }}
+        />
       )}
       {screen === 'tracker' && (
         <Tracker
@@ -118,6 +135,7 @@ export default function App() {
           }}
           onOpenSettings={() => setScreen('settings')}
           onOpenToday={() => setScreen('today')}
+          onOpenLevels={() => setScreen('levels')}
         />
       )}
       {screen === 'running' && timer && (
@@ -143,9 +161,13 @@ export default function App() {
         />
       )}
       {screen === 'today' && <Today onClose={() => setScreen(timer ? 'running' : 'tracker')} />}
+      {screen === 'levels' && <Levels onClose={() => setScreen(timer ? 'running' : 'tracker')} />}
       {screen === 'settings' && (
         <Settings
-          onClose={() => setScreen(timer ? 'running' : 'tracker')}
+          onClose={async () => {
+            await refresh();
+            setScreen(timer ? 'running' : 'tracker');
+          }}
           onSignOut={() => setScreen('auth')}
         />
       )}
@@ -155,6 +177,12 @@ export default function App() {
             swan.batchClose();
             setScreen(timer ? 'running' : 'tracker');
           }}
+        />
+      )}
+      {screen === 'nudge' && (
+        <Nudge
+          timer={timer}
+          onExpand={() => swan.nudgeExpand()}
         />
       )}
     </div>

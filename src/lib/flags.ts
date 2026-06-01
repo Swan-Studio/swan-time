@@ -16,6 +16,7 @@ type Entry = {
 const CLIENT_FACING_CATEGORIES = new Set([
   'Client Meeting',
   'Editing',
+  'Revising Edit',
   'Scripting',
   'Scheduling and Captioning',
   'Shooting',

@@ -11,6 +11,7 @@ html, body, #root {
   user-select: none;
   cursor: default;
   overflow: hidden;
+  -webkit-app-region: drag;
 }
 
 body {
@@ -21,7 +22,10 @@ body {
 }
 
 .draggable { -webkit-app-region: drag; }
-.no-drag { -webkit-app-region: no-drag; }
+.no-drag,
+button, input, select, textarea, a, label, [role="button"], [contenteditable] {
+  -webkit-app-region: no-drag;
+}
 
 input, button, select, textarea {
   -webkit-user-select: text;
@@ -32,10 +36,58 @@ input, button, select, textarea {
   outline: none;
 }
 
-button { cursor: default; }
+button, a, [role="button"] { cursor: pointer; }
+button:disabled, [role="button"][aria-disabled="true"] { cursor: default; }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb { background: rgba(8,8,34,0.18); border-radius: 999px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
 .tabular { font-variant-numeric: tabular-nums; }
+
+/* Header button hover: grey idle → swan gradient on hover. */
+.swan-hover-text {
+  color: #7A7A85;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.swan-hover-text:hover {
+  background: linear-gradient(135deg, #EB0091 0%, #FF4E01 50%, #FCED17 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.swan-hover-icon {
+  color: #7A7A85;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+.swan-hover-icon svg * {
+  stroke: currentColor;
+  transition: stroke 0.2s;
+}
+.swan-hover-icon:hover svg * {
+  stroke: url(#swan-grad);
+}
+.swan-hover-img {
+  filter: grayscale(1);
+  opacity: 0.75;
+  cursor: pointer;
+  transition: filter 0.25s, opacity 0.25s;
+}
+.swan-hover-img:hover {
+  filter: none;
+  opacity: 1;
+}
+
+/* I-beam over readable text. Children of buttons/links inherit the parent's
+   cursor so interactive elements stay default/pointer. */
+h1, h2, h3, h4, h5, h6, p, label, li, span {
+  cursor: text;
+}
+button, button *, a, a * {
+  cursor: inherit;
+}
+input, textarea {
+  cursor: text;
+}

@@ -34,6 +34,7 @@ function client(): Anthropic | null {
 }
 
 export type CategorySuggestion = {
+  clientName?: string;
   division?: string;
   category?: string;
   confidence: number;
@@ -41,20 +42,30 @@ export type CategorySuggestion = {
 
 export async function suggestCategory(
   activityName: string,
-  recentNames: string[]
+  context: { recents: Array<{ name: string; clientName?: string }>; clients: string[] }
 ): Promise<CategorySuggestion> {
   const c = client();
   if (!c || !activityName.trim()) return { confidence: 0 };
 
+  const clientsHint = context.clients.length
+    ? `\nAllowed clients (match exactly one, case-insensitive on input but return exact case, or null): ${context.clients.join(', ')}.`
+    : '';
+
   const sys = `You classify time-tracking activity names for a creative agency.
-Return strict JSON: {"division": string|null, "category": string|null, "confidence": 0..1}.
+Return strict JSON: {"clientName": string|null, "division": string|null, "category": string|null, "confidence": 0..1}.
 Allowed divisions: ${DIVISIONS.join(', ')}.
-Allowed categories: ${CATEGORIES.join(', ')}.
+Allowed categories: ${CATEGORIES.join(', ')}.${clientsHint}
+Infer the client from the activity name or from similar recent activities. If no client is clearly indicated, return null for clientName.
 If unsure, return null fields and low confidence.`;
+
+  const recentLines = context.recents
+    .slice(0, 5)
+    .map(r => `- ${r.name}${r.clientName ? ` (client: ${r.clientName})` : ''}`)
+    .join('\n');
 
   const usr = `Activity: "${activityName}"
 Recent activities by this user (for context):
-${recentNames.slice(0, 5).map(n => `- ${n}`).join('\n') || '(none)'}`;
+${recentLines || '(none)'}`;
 
   try {
     const res = await c.messages.create({
@@ -70,7 +81,11 @@ ${recentNames.slice(0, 5).map(n => `- ${n}`).join('\n') || '(none)'}`;
     const m = text.match(/\{[\s\S]*\}/);
     if (!m) return { confidence: 0 };
     const parsed = JSON.parse(m[0]);
+    const clientMatch = typeof parsed.clientName === 'string'
+      ? context.clients.find(c => c.toLowerCase() === parsed.clientName.toLowerCase())
+      : undefined;
     return {
+      clientName: clientMatch,
       division: DIVISIONS.includes(parsed.division) ? parsed.division : undefined,
       category: CATEGORIES.includes(parsed.category) ? parsed.category : undefined,
       confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0))
@@ -120,7 +135,7 @@ Return STRICT JSON: an array of objects with these fields:
 Allowed clients (match exactly, case-insensitive on input but return exact case): ${context.clients.join(', ')}
 
 Category → Division mapping (use this to pick division from category):
-- Content Delivery: Scripting, Editing, Ideating Concepts, Research Deck Preparation, Editor & Creator Briefing, Reviewing, Creator Recruitment
+- Content Delivery: Scripting, Editing, Revising Edit, Ideating Concepts, Research Deck Preparation, Editor & Creator Briefing, Reviewing, Creator Recruitment
 - Production: Shooting (only actual on-set/filming work)
 - Social Media Management: Scheduling and Captioning, Monthly Reporting
 - Ads Management: Ad Copy, Campaign Upload, Data Analysis, Audit

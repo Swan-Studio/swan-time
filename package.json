@@ -1,18 +1,20 @@
 {
   "name": "swan-time",
-  "version": "1.0.0",
+  "version": "1.0.5",
   "description": "Swan Studio menubar time tracker — posts to Monday.com",
   "main": "dist-electron/main.js",
   "author": "Swan Studio",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"npm:dev:electron\"",
-    "dev:electron": "wait-on http://localhost:5173 && tsc -p electron/tsconfig.json && electron .",
+    "dev": "concurrently -k \"vite\" \"npm:dev:tsc\" \"npm:dev:electron\"",
+    "dev:tsc": "tsc -p electron/tsconfig.json --watch --preserveWatchOutput",
+    "dev:electron": "wait-on http://localhost:5173 dist-electron/main.js && electronmon .",
     "build:renderer": "vite build",
     "build:electron": "tsc -p electron/tsconfig.json",
     "build": "npm run build:renderer && npm run build:electron",
-    "package": "npm run build && electron-builder --mac",
+    "package": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --publish never",
+    "package:win": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --x64 --publish never",
     "rebuild": "electron-rebuild -f -w keytar"
   },
   "dependencies": {
@@ -33,6 +35,7 @@
     "concurrently": "^8.2.2",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
+    "electronmon": "^2.0.4",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.4.5",
@@ -56,44 +59,57 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "artifactName": "Swan-Time-${version}-${arch}.${ext}",
       "extendInfo": {
-        "LSUIElement": 1,
-        "CFBundleURLTypes": [
-          {
-            "CFBundleURLSchemes": [
-              "swan-time"
-            ],
-            "CFBundleURLName": "studio.swan.time"
-          }
-        ]
+        "LSUIElement": 1
       }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Swan-Time-${version}-${arch}-${ext}.${ext}",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Swan-Time-Setup-${version}.${ext}"
     },
     "dmg": {
       "title": "Swan Time ${version}",
       "contents": [
-        { "x": 130, "y": 220, "type": "file" },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
-    "protocols": [
-      {
-        "name": "swan-time",
-        "schemes": [
-          "swan-time"
-        ]
-      }
-    ],
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "Gruzzo97",
-        "repo": "swan-time",
-        "private": true
-      }
-    ]
+    "publish": null
   }
 }

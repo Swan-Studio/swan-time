@@ -1,4 +1,5 @@
 type Props = {
+  clientName?: string;
   division?: string;
   category?: string;
   confidence: number;
@@ -6,15 +7,23 @@ type Props = {
   onDismiss: () => void;
 };
 
-export function AiStrip({ division, category, confidence, onAccept, onDismiss }: Props) {
-  if (confidence <= 0.5 || (!division && !category)) return null;
+export function AiStrip({ clientName, division, category, confidence, onAccept, onDismiss }: Props) {
+  if (confidence <= 0.5 || (!clientName && !division && !category)) return null;
+  const parts = [
+    clientName && <span key="client">{clientName}</span>,
+    division && <span key="division" className="text-mute">{division}</span>,
+    category && <span key="category">{category}</span>
+  ].filter(Boolean);
   return (
     <div className="no-drag mt-2 px-3 py-2 bg-swan-gradient-soft border border-accent/20 rounded-md flex items-center gap-2 animate-rise">
       <span className="text-[10px] uppercase tracking-[0.1em] text-accent font-semibold">AI</span>
       <span className="text-[12px] text-ink truncate flex-1">
-        {division && <span className="text-mute">{division}</span>}
-        {division && category && <span className="text-mute mx-1">·</span>}
-        {category && <span>{category}</span>}
+        {parts.map((p, i) => (
+          <span key={i}>
+            {i > 0 && <span className="text-mute mx-1">·</span>}
+            {p}
+          </span>
+        ))}
       </span>
       <button
         onClick={onAccept}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { swan } from '../lib/swan';
 import { Picker } from '../components/Picker';
 import { CATEGORIES, DIVISIONS } from '../lib/constants';
@@ -15,6 +15,11 @@ export function StopGate({ timer, onLogged, onCancel }: Props) {
   const [category, setCategory] = useState(timer.category);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
+
+  useEffect(() => {
+    swan.getSettings().then(s => setPrimaryDivision(s.primaryDivision));
+  }, []);
 
   async function log() {
     if (!division || !category) return;
@@ -32,7 +37,7 @@ export function StopGate({ timer, onLogged, onCancel }: Props) {
   return (
     <div className="flex flex-col h-full px-5 pt-4 pb-5 animate-rise">
       <div className="flex items-center justify-between draggable mb-3">
-        <h1 className="font-display text-[16px] font-medium tracking-tight">
+        <h1 className="text-[16px] font-medium tracking-tight">
           Almost there
         </h1>
         <button
@@ -53,6 +58,7 @@ export function StopGate({ timer, onLogged, onCancel }: Props) {
           value={division}
           options={DIVISIONS.map(d => ({ id: d, label: d }))}
           onChange={(_, l) => setDivision(l)}
+          highlightId={primaryDivision}
         />
         <Picker
           label="Category"

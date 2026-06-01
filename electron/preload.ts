@@ -8,6 +8,7 @@ const api = {
   authSignOut: () => ipcRenderer.invoke('auth:signOut'),
 
   // Monday data
+  openBoard: () => ipcRenderer.invoke('monday:openBoard'),
   listClients: () => ipcRenderer.invoke('monday:clients'),
   listTimeTrackerBoards: () => ipcRenderer.invoke('monday:listTimeTrackerBoards'),
   setBoard: (boardId: number, boardName?: string) =>
@@ -15,12 +16,24 @@ const api = {
   todayEntries: () => ipcRenderer.invoke('monday:today'),
   recentEntries: (daysBack?: number) => ipcRenderer.invoke('monday:recent', daysBack),
   lastLogStatus: () => ipcRenderer.invoke('monday:lastLogStatus'),
+  getStats: () => ipcRenderer.invoke('monday:stats'),
   deleteEntry: (id: number) => ipcRenderer.invoke('monday:delete', id),
+  updateEntry: (patch: {
+    itemId: number;
+    name: string;
+    clientId?: number;
+    division: string;
+    category: string;
+    durationMinutes: number;
+    date?: string;
+  }) => ipcRenderer.invoke('monday:update', patch),
 
   // Timer
   getRunning: () => ipcRenderer.invoke('timer:get'),
   startTimer: (payload: any) => ipcRenderer.invoke('timer:start', payload),
   updateTimer: (patch: any) => ipcRenderer.invoke('timer:update', patch),
+  pauseTimer: () => ipcRenderer.invoke('timer:pause'),
+  resumeTimer: () => ipcRenderer.invoke('timer:resume'),
   stopTimer: () => ipcRenderer.invoke('timer:stop'),
   cancelTimer: () => ipcRenderer.invoke('timer:cancel'),
 
@@ -39,6 +52,10 @@ const api = {
   batchClose: () => ipcRenderer.invoke('batch:close'),
   batchParse: (text: string) => ipcRenderer.invoke('batch:parse', text),
   batchPost: (rows: any[]) => ipcRenderer.invoke('batch:post', rows),
+
+  // Nudge
+  nudgeExpand: () => ipcRenderer.invoke('nudge:expand'),
+  nudgeClose: () => ipcRenderer.invoke('nudge:close'),
 
   // Window
   hide: () => ipcRenderer.invoke('window:hide'),
@@ -59,8 +76,8 @@ const api = {
       ipcRenderer.off('window:show', handler);
     };
   },
-  onWidgetMode: (cb: (mode: 'compact' | 'batch') => void): (() => void) => {
-    const handler = (_: unknown, mode: 'compact' | 'batch') => cb(mode);
+  onWidgetMode: (cb: (mode: 'compact' | 'batch' | 'nudge') => void): (() => void) => {
+    const handler = (_: unknown, mode: 'compact' | 'batch' | 'nudge') => cb(mode);
     ipcRenderer.on('widget:mode', handler);
     return () => {
       ipcRenderer.off('widget:mode', handler);

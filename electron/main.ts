@@ -1,8 +1,8 @@
-import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage, screen, dialog } from 'electron';
+import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage, screen, dialog, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'node:path';
 import fs from 'node:fs';
-import { store, pushRecent } from './store';
+import { store, pushRecent, type RunningTimer } from './store';
 
 // Tiny dotenv shim — loads .env.local from the project root in dev so Swan's
 // shared API keys can be set once without shell exports. No dependency added.
@@ -24,9 +24,11 @@ function loadEnvLocal() {
   }
 }
 loadEnvLocal();
-import { setupProtocolHandler, startOAuth, getToken, clearToken, setManualToken } from './oauth';
+import { startOAuth, getToken, clearToken, setManualToken } from './oauth';
+import { TRAY_ICON_PNG_1X, TRAY_ICON_PNG_2X } from './trayIconData';
 import {
   whoAmI,
+  getAccountSlug,
   findUserBoard,
   listClients,
   listTimeTrackerBoards,
@@ -34,7 +36,13 @@ import {
   todayEntries,
   recentEntries,
   lastLogStatus,
-  deleteEntry
+  deleteEntry,
+  getBoardUrl,
+  getStats,
+  updateEntry,
+  clearColumnCache,
+  clearClientsCache,
+  clearEntriesCache
 } from './monday';
 import { suggestCategory, dailySummary, aiStatus, parseBatch } from './ai';
 
@@ -42,10 +50,13 @@ const isDev = !app.isPackaged;
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let tickInterval: NodeJS.Timeout | null = null;
-let widgetMode: 'compact' | 'batch' = 'compact';
+let nudgeTimeout: NodeJS.Timeout | null = null;
+let widgetMode: 'compact' | 'batch' | 'nudge' = 'compact';
+let lastBounds: Electron.Rectangle | null = null;
 
 const COMPACT_SIZE = { width: 380, height: 480 };
 const BATCH_SIZE = { width: 760, height: 560 };
+const NUDGE_SIZE = { width: 380, height: 56 };
 
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) {
@@ -70,6 +81,7 @@ function createWindow() {
     vibrancy: 'under-window',
     visualEffectState: 'active',
     backgroundColor: '#00000000',
+    acceptFirstMouse: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -88,13 +100,33 @@ function createWindow() {
   }
 
   win.on('blur', () => {
-    // Stay open in batch mode — user will switch apps to copy info.
-    if (widgetMode === 'batch') return;
-    if (!isDev) win?.hide();
+    if (widgetMode === 'nudge') return; // nudges close only via 30s timer or expand; don't pollute lastBounds with nudge size
+    if (win) lastBounds = win.getBounds();
+    if (store.get('settings').closeOnBlur !== false) win?.hide();
   });
 }
 
-function setWidgetMode(mode: 'compact' | 'batch') {
+// Anchor a window of the given size near the tray icon. Default below; flip
+// above when the tray sits in the lower half of the work area (Windows
+// taskbar-at-bottom case). Always clamped inside workArea so the popover
+// can't end up off-screen.
+function placeNearTray(size: { width: number; height: number }): { x: number; y: number } | null {
+  if (!tray) return null;
+  const trayBounds = tray.getBounds();
+  const work = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y }).workArea;
+  const x = Math.round(
+    Math.min(
+      Math.max(trayBounds.x + trayBounds.width / 2 - size.width / 2, work.x + 8),
+      work.x + work.width - size.width - 8
+    )
+  );
+  const preferAbove = trayBounds.y + trayBounds.height / 2 > work.y + work.height / 2;
+  const rawY = preferAbove ? trayBounds.y - size.height - 6 : trayBounds.y + trayBounds.height + 6;
+  const y = Math.round(Math.min(Math.max(rawY, work.y + 8), work.y + work.height - size.height - 8));
+  return { x, y };
+}
+
+function setWidgetMode(mode: 'compact' | 'batch' | 'nudge') {
   if (!win) return;
   widgetMode = mode;
   win.setResizable(mode === 'batch');
@@ -105,20 +137,13 @@ function setWidgetMode(mode: 'compact' | 'batch') {
     win.setBounds({ x, y, ...BATCH_SIZE }, true);
     win.setAlwaysOnTop(false);
   } else {
+    const size = mode === 'nudge' ? NUDGE_SIZE : COMPACT_SIZE;
     win.setAlwaysOnTop(true);
-    if (tray) {
-      const trayBounds = tray.getBounds();
-      const display = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y });
-      const x = Math.round(
-        Math.min(
-          Math.max(trayBounds.x + trayBounds.width / 2 - COMPACT_SIZE.width / 2, display.workArea.x + 8),
-          display.workArea.x + display.workArea.width - COMPACT_SIZE.width - 8
-        )
-      );
-      const y = Math.round(trayBounds.y + trayBounds.height + 6);
-      win.setBounds({ x, y, ...COMPACT_SIZE }, true);
+    const placement = placeNearTray(size);
+    if (placement) {
+      win.setBounds({ ...placement, ...size }, true);
     } else {
-      win.setSize(COMPACT_SIZE.width, COMPACT_SIZE.height);
+      win.setSize(size.width, size.height);
     }
   }
   win.webContents.send('widget:mode', mode);
@@ -126,22 +151,20 @@ function setWidgetMode(mode: 'compact' | 'batch') {
 
 function positionNearTray() {
   if (!win || !tray) return;
-  const trayBounds = tray.getBounds();
   const winBounds = win.getBounds();
-  const display = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y });
-  const x = Math.round(
-    Math.min(
-      Math.max(trayBounds.x + trayBounds.width / 2 - winBounds.width / 2, display.workArea.x + 8),
-      display.workArea.x + display.workArea.width - winBounds.width - 8
-    )
-  );
-  const y = Math.round(trayBounds.y + trayBounds.height + 6);
-  win.setPosition(x, y, false);
+  const placement = placeNearTray({ width: winBounds.width, height: winBounds.height });
+  if (placement) win.setPosition(placement.x, placement.y, false);
 }
 
 function showWindow() {
   if (!win) return;
-  positionNearTray();
+  // Sticky-widget mode: restore exact last bounds. Popover mode: re-anchor to tray.
+  const sticky = store.get('settings').closeOnBlur === false;
+  if (sticky && lastBounds) {
+    win.setBounds(lastBounds);
+  } else {
+    positionNearTray();
+  }
   win.show();
   win.focus();
   win.webContents.send('window:show');
@@ -157,24 +180,17 @@ function toggleWindow() {
 }
 
 function buildTrayIcon(): Electron.NativeImage {
-  // 16x16 template PNG: filled black circle on transparent background.
-  const png = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA' +
-      'YElEQVQ4jc2SwQ3AIAhFXyfo/iN1kHaCuoEnE2NtEW2T+i8E' +
-      '4QGCKY/STGYBmiZbAfCgB4GU0bj5qQAVA0wOyGZmOxhJrsBO' +
-      'r3YA0lW6VR+w5gC6P8Bf/8AbPJfwAA1IBQVPTvwwAAAAAElF' +
-      'TkSuQmCC',
-    'base64'
-  );
-  const img = nativeImage.createFromBuffer(png);
+  const img = nativeImage.createFromBuffer(TRAY_ICON_PNG_1X, { scaleFactor: 1.0 });
+  img.addRepresentation({ scaleFactor: 2.0, buffer: TRAY_ICON_PNG_2X });
   img.setTemplateImage(true);
   return img;
 }
 
+const SHORTCUT_HINT = process.platform === 'darwin' ? '⌘⌥T' : 'Ctrl+Alt+T';
+
 function createTray() {
   tray = new Tray(buildTrayIcon());
-  tray.setToolTip('Swan Time — ⌘⇧T');
-  tray.setTitle(' Swan'); // always-visible label until a real icon ships
+  tray.setToolTip(`Swan Time — ${SHORTCUT_HINT}`);
   tray.on('click', () => toggleWindow());
   tray.on('right-click', () => {
     const menu = Menu.buildFromTemplate([
@@ -188,7 +204,7 @@ function createTray() {
         }
       },
       { type: 'separator' },
-      { label: 'Sign out', click: async () => { await clearToken(); store.clear(); } },
+      { label: 'Sign out', click: async () => { await clearToken(); store.clear(); clearColumnCache(); clearClientsCache(); clearEntriesCache(); } },
       { label: 'Quit Swan Time', role: 'quit' }
     ]);
     tray?.popUpContextMenu(menu);
@@ -196,17 +212,33 @@ function createTray() {
   refreshTrayTitle();
 }
 
+function runningElapsedMs(r: NonNullable<RunningTimer>): number {
+  const acc = r.accumulatedMs ?? 0;
+  if (r.pausedAt) return acc;
+  return acc + (Date.now() - r.startedAt);
+}
+
 function refreshTrayTitle() {
   if (!tray) return;
   const running = store.get('running');
   if (!running) {
-    tray.setTitle(' Swan');
+    if (process.platform === 'darwin') tray.setTitle('');
+    tray.setToolTip(`Swan Time — ${SHORTCUT_HINT}`);
     return;
   }
-  const elapsed = Math.floor((Date.now() - running.startedAt) / 1000);
+  const elapsed = Math.floor(runningElapsedMs(running) / 1000);
   const m = Math.floor(elapsed / 60);
   const s = elapsed % 60;
-  tray.setTitle(` ● ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`);
+  const indicator = running.pausedAt ? '⏸' : '●';
+  const status = `${indicator} ${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  // macOS shows the live timer inline next to the menubar icon. Windows/Linux
+  // have no equivalent, so we surface the timer in the tray tooltip instead —
+  // updates on next hover, which is the conventional Electron fallback.
+  if (process.platform === 'darwin') {
+    tray.setTitle(` ${status}`);
+  } else {
+    tray.setToolTip(`Swan Time ${status} — ${SHORTCUT_HINT}`);
+  }
 }
 
 function startTickLoop() {
@@ -214,10 +246,87 @@ function startTickLoop() {
   tickInterval = setInterval(() => {
     const running = store.get('running');
     if (!running) return;
-    const seconds = Math.floor((Date.now() - running.startedAt) / 1000);
+    const seconds = Math.floor(runningElapsedMs(running) / 1000);
     win?.webContents.send('timer:tick', seconds);
     refreshTrayTitle();
   }, 1000);
+}
+
+// Compute the next :00 or :30 boundary that falls within the 9:00–17:00
+// local-time window (inclusive of 17:00). Recomputed each fire so it self-
+// corrects after sleep/wake or DST transitions.
+function nextNudgeFromNow(now: Date = new Date()): Date {
+  const t = new Date(now.getTime() + 1000); // 1s slop avoids re-firing the boundary we just hit
+  t.setSeconds(0, 0);
+  if (t.getMinutes() < 30) t.setMinutes(30);
+  else { t.setMinutes(0); t.setHours(t.getHours() + 1); }
+  for (let i = 0; i < 96; i++) {
+    const h = t.getHours(), m = t.getMinutes();
+    if ((h >= 9 && h < 17) || (h === 17 && m === 0)) return t;
+    t.setMinutes(t.getMinutes() + 30);
+  }
+  return t;
+}
+
+function fireNudge() {
+  if (!win) return;
+  if (store.get('settings').nudgesEnabled === false) return;
+  // If the user is already in the widget, don't yank them into the small banner.
+  if (win.isVisible()) return;
+  setWidgetMode('nudge');
+  // showInactive avoids stealing focus from whatever they're working in.
+  win.showInactive();
+}
+
+function scheduleNextNudge() {
+  if (nudgeTimeout) clearTimeout(nudgeTimeout);
+  const delay = Math.max(1000, nextNudgeFromNow().getTime() - Date.now());
+  nudgeTimeout = setTimeout(() => {
+    fireNudge();
+    scheduleNextNudge();
+  }, delay);
+}
+
+// Deterministic test-mode stats so the level UI can be inspected as a
+// hypothetical seasoned user. Triggered when displayNameOverride is set.
+const MOCK_CATEGORIES = [
+  'Client Meeting',
+  'Internal Meeting',
+  'Research',
+  'Scripting',
+  'Editing',
+  'Scheduling and Captioning',
+  'Shooting',
+  'Briefing',
+  'Reviews',
+  'Health Check',
+  'Setup',
+  'Production',
+  'Pre-Production',
+  'Post-Production',
+  'Client Comms',
+  'Other'
+];
+
+function mockStatsForName(name: string): {
+  streak: number;
+  categoryMinutes: Record<string, number>;
+} {
+  let seed = 0;
+  for (let i = 0; i < name.length; i++) seed = (seed * 31 + name.charCodeAt(i)) | 0;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) | 0;
+    return ((seed >>> 0) % 10000) / 10000;
+  };
+  const categoryMinutes: Record<string, number> = {};
+  for (const c of MOCK_CATEGORIES) {
+    const r = rand();
+    // Most categories have meaningful time; ~10% sit at 0 to mimic real spread.
+    const hours = r < 0.1 ? 0 : Math.floor(r * 220);
+    categoryMinutes[c] = hours * 60;
+  }
+  const streak = 3 + Math.floor(rand() * 25);
+  return { streak, categoryMinutes };
 }
 
 function registerIpc() {
@@ -229,6 +338,7 @@ function registerIpc() {
       authed: true,
       userId: store.get('userId'),
       userName: store.get('userName'),
+      userEmail: store.get('userEmail'),
       boardId: store.get('boardId')
     };
   });
@@ -247,7 +357,11 @@ function registerIpc() {
     await clearToken();
     store.delete('userId');
     store.delete('userName');
+    store.delete('userEmail');
     store.delete('boardId');
+    clearColumnCache();
+    clearClientsCache();
+    clearEntriesCache();
     return { authed: false };
   });
 
@@ -255,6 +369,11 @@ function registerIpc() {
   ipcMain.handle('monday:clients', () => listClients());
   ipcMain.handle('monday:listTimeTrackerBoards', () => listTimeTrackerBoards());
   ipcMain.handle('monday:setBoard', (_e, boardId: number, boardName?: string) => {
+    const prev = store.get('boardId');
+    if (prev && prev !== boardId) {
+      clearColumnCache(prev);
+      clearEntriesCache();
+    }
     store.set('boardId', boardId);
     if (boardName) store.set('userName', store.get('userName')); // keep
     return { boardId };
@@ -274,7 +393,32 @@ function registerIpc() {
     if (!boardId) return { lastDate: null, daysSince: null };
     return lastLogStatus(boardId);
   });
+  ipcMain.handle('monday:stats', () => {
+    const boardId = store.get('boardId');
+    if (!boardId) return { streak: 0, categoryMinutes: {} };
+    const override = store.get('settings').displayNameOverride?.trim();
+    if (override) return mockStatsForName(override);
+    return getStats(boardId);
+  });
   ipcMain.handle('monday:delete', (_e, id: number) => deleteEntry(id));
+  ipcMain.handle('monday:update', async (_e, patch: {
+    itemId: number;
+    name: string;
+    clientId?: number;
+    division: string;
+    category: string;
+    durationMinutes: number;
+    date?: string;
+  }) => {
+    const boardId = store.get('boardId');
+    if (!boardId) return { ok: false, error: 'No board selected' };
+    try {
+      const res = await updateEntry({ boardId, ...patch });
+      return { ok: true, ...res };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
 
   // Timer
   ipcMain.handle('timer:get', () => store.get('running'));
@@ -286,7 +430,8 @@ function registerIpc() {
       clientId: payload.clientId,
       clientName: payload.clientName,
       division: payload.division,
-      category: payload.category
+      category: payload.category,
+      accumulatedMs: 0
     });
     startTickLoop();
     refreshTrayTitle();
@@ -300,6 +445,31 @@ function registerIpc() {
     return store.get('running');
   });
 
+  ipcMain.handle('timer:pause', () => {
+    const cur = store.get('running');
+    if (!cur || cur.pausedAt) return cur;
+    const now = Date.now();
+    store.set('running', {
+      ...cur,
+      pausedAt: now,
+      accumulatedMs: (cur.accumulatedMs ?? 0) + (now - cur.startedAt)
+    });
+    refreshTrayTitle();
+    const next = store.get('running');
+    if (next) win?.webContents.send('timer:tick', Math.floor(runningElapsedMs(next) / 1000));
+    return next;
+  });
+
+  ipcMain.handle('timer:resume', () => {
+    const cur = store.get('running');
+    if (!cur || !cur.pausedAt) return cur;
+    // Drop pausedAt; reset startedAt so tick math resumes from now.
+    const { pausedAt: _drop, ...rest } = cur;
+    store.set('running', { ...rest, startedAt: Date.now() });
+    refreshTrayTitle();
+    return store.get('running');
+  });
+
   ipcMain.handle('timer:stop', async () => {
     const cur = store.get('running');
     if (!cur) return { ok: false, error: 'No running timer' };
@@ -309,16 +479,28 @@ function registerIpc() {
     if (!boardId || !userId) return { ok: false, error: 'Not authenticated' };
 
     const endedAt = Date.now();
-    const result = await logEntry({
-      boardId,
-      userId,
-      name: cur.name,
-      clientId: cur.clientId,
-      division: cur.division,
-      category: cur.category,
-      startedAt: cur.startedAt,
-      endedAt
-    });
+    // Pass an effective startedAt so logEntry's (endedAt - startedAt) yields the
+    // tracked duration minus any paused time.
+    const effectiveMs = runningElapsedMs(cur);
+    let result;
+    try {
+      result = await logEntry({
+        boardId,
+        userId,
+        name: cur.name,
+        clientId: cur.clientId,
+        division: cur.division,
+        category: cur.category,
+        startedAt: endedAt - effectiveMs,
+        endedAt
+      });
+    } catch (e) {
+      // Surface the Monday error to the UI instead of leaving it stuck on
+      // "Logging…". Keep the running timer in store so the user doesn't lose
+      // their elapsed time and can retry.
+      console.error('timer:stop logEntry failed:', e);
+      return { ok: false, error: (e as Error).message || 'Failed to log entry' };
+    }
     pushRecent({
       name: cur.name,
       clientId: cur.clientId,
@@ -348,8 +530,9 @@ function registerIpc() {
   // AI
   ipcMain.handle('ai:status', () => aiStatus());
   ipcMain.handle('ai:suggest', async (_e, name: string) => {
-    const recents = store.get('recents').map(r => r.name);
-    return suggestCategory(name, recents);
+    const recents = store.get('recents').map(r => ({ name: r.name, clientName: r.clientName }));
+    const clients = await listClients();
+    return suggestCategory(name, { recents, clients: clients.map(c => c.name) });
   });
   ipcMain.handle('ai:summary', async () => {
     const boardId = store.get('boardId');
@@ -364,6 +547,17 @@ function registerIpc() {
     setWidgetMode('batch');
   });
   ipcMain.handle('batch:close', () => setWidgetMode('compact'));
+
+  // Nudge
+  ipcMain.handle('nudge:expand', () => {
+    setWidgetMode('compact');
+    win?.focus();
+  });
+  ipcMain.handle('nudge:close', () => {
+    // Reset to compact size before hiding so the next show is the normal widget.
+    setWidgetMode('compact');
+    win?.hide();
+  });
 
   ipcMain.handle('batch:parse', async (_e, text: string) => {
     const clients = await listClients();
@@ -423,12 +617,41 @@ function registerIpc() {
   // Window
   ipcMain.handle('window:hide', () => win?.hide());
   ipcMain.handle('app:quit', () => app.quit());
+
+  ipcMain.handle('monday:openBoard', async () => {
+    const boardId = store.get('boardId');
+    if (!boardId) return { ok: false, error: 'No board selected' };
+    // Ask Monday for the canonical board URL — the slug-less monday.com domain
+    // 404s on the marketing site, so guessing the workspace subdomain is unsafe.
+    let url: string | null = null;
+    try {
+      url = await getBoardUrl(boardId);
+    } catch {
+      // fall through to slug-based stitching
+    }
+    if (!url) {
+      let slug = store.get('accountSlug');
+      if (!slug) {
+        slug = (await getAccountSlug()) ?? undefined;
+        if (slug) store.set('accountSlug', slug);
+      }
+      if (!slug) return { ok: false, error: 'Could not resolve board URL' };
+      url = `https://${slug}.monday.com/boards/${boardId}`;
+    }
+    await shell.openExternal(url);
+    return { ok: true };
+  });
 }
 
 async function resolveUser() {
   const me = await whoAmI();
   store.set('userId', Number(me.id));
   store.set('userName', me.name);
+  if (me.email) store.set('userEmail', me.email);
+  // Best-effort — never fails resolution.
+  getAccountSlug().then(slug => {
+    if (slug) store.set('accountSlug', slug);
+  });
   const firstName = me.name.split(/\s+/)[0];
   const board = await findUserBoard(firstName);
   if (!board) {
@@ -446,6 +669,10 @@ async function resolveUser() {
 
 function setupAutoUpdater() {
   if (isDev) return;
+  // No publish channel is configured (DMG distributed manually); skip the
+  // updater entirely so it doesn't spam ENOENT for the missing app-update.yml.
+  const updateConfig = path.join(process.resourcesPath, 'app-update.yml');
+  if (!fs.existsSync(updateConfig)) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.on('error', err => console.warn('updater error:', err.message));
@@ -461,23 +688,27 @@ function setupAutoUpdater() {
     });
     if (choice === 0) autoUpdater.quitAndInstall();
   });
-  // Initial check after the window has settled, then every 4 hours.
   setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 10_000);
   setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
 }
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin') app.dock?.hide();
-  setupProtocolHandler();
   createWindow();
   createTray();
   registerIpc();
   setupAutoUpdater();
 
+  // Migrate the legacy default hotkey if still in place.
+  const settings = store.get('settings');
+  if (settings.hotkey === 'CommandOrControl+Shift+T') {
+    store.set('settings', { ...settings, hotkey: 'CommandOrControl+Alt+T' });
+  }
   const hotkey = store.get('settings').hotkey;
   globalShortcut.register(hotkey, () => toggleWindow());
 
   if (store.get('running')) startTickLoop();
+  scheduleNextNudge();
 
   // Auto-show only on first run (no token yet) or if a timer is mid-flight.
   // Otherwise, stay out of the way — user summons via tray click or hotkey.
@@ -494,4 +725,5 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (tickInterval) clearInterval(tickInterval);
+  if (nudgeTimeout) clearTimeout(nudgeTimeout);
 });

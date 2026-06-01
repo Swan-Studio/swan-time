@@ -11,6 +11,7 @@ export const CATEGORIES = [
   'Research',
   'Scripting',
   'Editing',
+  'Revising Edit',
   'Scheduling and Captioning',
   'Shooting',
   'Research Deck Preparation',
@@ -49,4 +50,6 @@ export type Running = {
   clientName?: string;
   division?: string;
   category?: string;
+  pausedAt?: number;
+  accumulatedMs?: number;
 } | null;

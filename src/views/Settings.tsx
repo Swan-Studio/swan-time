@@ -10,6 +10,12 @@ export function Settings({ onClose, onSignOut }: Props) {
   const [hasSharedKey, setHasSharedKey] = useState(false);
   const [showOverride, setShowOverride] = useState(false);
   const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
+  const [closeOnBlur, setCloseOnBlur] = useState(true);
+  const [streaksEnabled, setStreaksEnabled] = useState(true);
+  const [levelsEnabled, setLevelsEnabled] = useState(true);
+  const [nudgesEnabled, setNudgesEnabled] = useState(true);
+  const [displayNameOverride, setDisplayNameOverride] = useState('');
+  const [canOverrideName, setCanOverrideName] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -18,15 +24,28 @@ export function Settings({ onClose, onSignOut }: Props) {
       setApiKey(s.anthropicApiKey || '');
       setShowOverride(Boolean(s.anthropicApiKey));
       setPrimaryDivision(s.primaryDivision);
+      setCloseOnBlur(s.closeOnBlur !== false);
+      setStreaksEnabled(s.streaksEnabled !== false);
+      setLevelsEnabled(s.levelsEnabled !== false);
+      setNudgesEnabled(s.nudgesEnabled !== false);
+      setDisplayNameOverride(s.displayNameOverride || '');
     });
     swan.aiStatus().then(s => setHasSharedKey(s.hasSharedKey));
+    swan.authStatus().then(a => {
+      setCanOverrideName(a.userEmail?.toLowerCase() === 'jake@swan.studio');
+    }).catch(() => {});
   }, []);
 
   async function save() {
     await swan.setSettings({
       aiEnabled,
       anthropicApiKey: showOverride && apiKey.trim() ? apiKey.trim() : undefined,
-      primaryDivision: primaryDivision || undefined
+      primaryDivision: primaryDivision || undefined,
+      closeOnBlur,
+      streaksEnabled,
+      levelsEnabled,
+      nudgesEnabled,
+      displayNameOverride: displayNameOverride.trim() || undefined
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
@@ -40,7 +59,7 @@ export function Settings({ onClose, onSignOut }: Props) {
   return (
     <div className="flex flex-col h-full px-5 pt-4 pb-5 animate-rise">
       <div className="flex items-center justify-between draggable mb-3">
-        <h1 className="font-display text-[18px] font-medium tracking-tight">Settings</h1>
+        <h1 className="text-[18px] font-medium tracking-tight">Settings</h1>
         <button
           onClick={onClose}
           className="no-drag text-[11px] uppercase tracking-[0.08em] text-mute hover:text-ink font-medium"
@@ -73,6 +92,66 @@ export function Settings({ onClose, onSignOut }: Props) {
             Pre-fills new entries with this division, and biases AI parsing in your favour.
           </div>
         </div>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={closeOnBlur}
+            onChange={e => setCloseOnBlur(e.target.checked)}
+            className="mt-0.5 accent-accent"
+          />
+          <div>
+            <div className="text-[13px] text-ink">Close when clicking away</div>
+            <div className="text-[11px] text-mute leading-relaxed">
+              On by default — popover style. Turn off to keep the widget open and drag it anywhere; it'll stay where you put it.
+            </div>
+          </div>
+        </label>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={nudgesEnabled}
+            onChange={e => setNudgesEnabled(e.target.checked)}
+            className="mt-0.5 accent-accent"
+          />
+          <div>
+            <div className="text-[13px] text-ink">Half-hourly nudges</div>
+            <div className="text-[11px] text-mute leading-relaxed">
+              At every :00 and :30 between 9am and 5pm, a small banner appears under the menubar — "What are you working on?" or "Still on the same task?" if a timer's running. Click to expand; auto-closes after 30s of no interaction.
+            </div>
+          </div>
+        </label>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={streaksEnabled}
+            onChange={e => setStreaksEnabled(e.target.checked)}
+            className="mt-0.5 accent-accent"
+          />
+          <div>
+            <div className="text-[13px] text-ink">Show streak</div>
+            <div className="text-[11px] text-mute leading-relaxed">
+              Counts consecutive weekdays with a logged entry. Weekends don't count and don't break the streak.
+            </div>
+          </div>
+        </label>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={levelsEnabled}
+            onChange={e => setLevelsEnabled(e.target.checked)}
+            className="mt-0.5 accent-accent"
+          />
+          <div>
+            <div className="text-[13px] text-ink">Show category levels</div>
+            <div className="text-[11px] text-mute leading-relaxed">
+              Level up as you log more time on a category. Lv2 at 10h, then each level needs 1.2× the previous gap.
+            </div>
+          </div>
+        </label>
 
         <label className="flex items-start gap-3 cursor-pointer">
           <input
@@ -135,14 +214,31 @@ export function Settings({ onClose, onSignOut }: Props) {
                   value={apiKey}
                   onChange={e => setApiKey(e.target.value)}
                   placeholder="sk-ant-…"
-                  className="w-full px-3 py-2 bg-chip rounded-md text-[12px] font-mono"
+                  className="w-full px-3 py-2 bg-chip rounded-md text-[12px] "
                 />
               </div>
             )}
           </div>
         )}
 
-        <div className="pt-3 border-t border-line">
+        <div className="pt-3 border-t border-line space-y-3">
+          {canOverrideName && (
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.1em] text-mute font-medium mb-1.5">
+                Display name override
+              </div>
+              <input
+                value={displayNameOverride}
+                onChange={e => setDisplayNameOverride(e.target.value)}
+                placeholder="Leave blank to use your real name"
+                className="w-full px-3 py-2 bg-chip rounded-md text-[12px]"
+              />
+              <div className="text-[10px] text-mute mt-1 leading-relaxed">
+                Display only — handy for testing what the app looks like for someone else. Doesn't affect Monday data.
+              </div>
+            </div>
+          )}
+
           <button
             onClick={signOut}
             className="text-[12px] text-mute hover:text-accent"

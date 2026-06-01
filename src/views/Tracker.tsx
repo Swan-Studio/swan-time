@@ -4,17 +4,21 @@ import { Picker } from '../components/Picker';
 import { AiStrip } from '../components/AiStrip';
 import { CATEGORIES, DIVISIONS, Client, Recent } from '../lib/constants';
 import { minutesToHm } from '../lib/format';
+import { levelFor } from '../lib/levels';
+import { LevelPill } from '../components/LevelPill';
+import mondayLogo from '../assets/monday-logo.svg';
 
 type Props = {
   onStarted: () => void;
   onOpenToday: () => void;
   onOpenSettings: () => void;
+  onOpenLevels: () => void;
   userName?: string;
   lastLog: { minutes: number } | null;
   onClearLastLog: () => void;
 };
 
-export function Tracker({ onStarted, onOpenToday, onOpenSettings, userName, lastLog, onClearLastLog }: Props) {
+export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, userName, lastLog, onClearLastLog }: Props) {
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState<number | undefined>();
   const [clientName, setClientName] = useState<string | undefined>();
@@ -23,7 +27,13 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, userName, last
   const [clients, setClients] = useState<Client[]>([]);
   const [recents, setRecents] = useState<Recent[]>([]);
   const [aiOn, setAiOn] = useState(false);
+  const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
+  const [streaksOn, setStreaksOn] = useState(true);
+  const [levelsOn, setLevelsOn] = useState(true);
+  const [streak, setStreak] = useState(0);
+  const [categoryMinutes, setCategoryMinutes] = useState<Record<string, number>>({});
   const [suggestion, setSuggestion] = useState<{
+    clientName?: string;
     division?: string;
     category?: string;
     confidence: number;
@@ -39,10 +49,17 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, userName, last
     swan.getRecents().then(setRecents);
     swan.getSettings().then(s => {
       setAiOn(s.aiEnabled);
+      setPrimaryDivision(s.primaryDivision);
+      setStreaksOn(s.streaksEnabled !== false);
+      setLevelsOn(s.levelsEnabled !== false);
       // Pre-fill division with user's primary if not yet set.
       if (s.primaryDivision && !division) setDivision(s.primaryDivision);
     });
     swan.lastLogStatus().then(setLastLogStatus).catch(() => {});
+    swan.getStats().then(s => {
+      setStreak(s.streak);
+      setCategoryMinutes(s.categoryMinutes);
+    }).catch(() => {});
     const off = swan.onShow(() => inputRef.current?.focus());
     return () => off();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,33 +119,79 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, userName, last
 
   return (
     <div className="flex flex-col h-full px-5 pt-4 pb-5 animate-rise">
+      {/* Shared gradient def for header icon hover. */}
+      <svg width="0" height="0" className="absolute" aria-hidden="true">
+        <defs>
+          <linearGradient id="swan-grad" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0%" stopColor="#FCED17" />
+            <stop offset="50%" stopColor="#FF4E01" />
+            <stop offset="100%" stopColor="#EB0091" />
+          </linearGradient>
+        </defs>
+      </svg>
       <div className="flex items-center justify-between mb-3 draggable">
-        <div className="flex items-baseline gap-2">
-          <h1 className="font-display text-[18px] font-medium tracking-tight">Swan Time</h1>
+        <div className="flex items-baseline gap-2 min-w-0">
+          <h1 className="text-[18px] font-medium tracking-tight whitespace-nowrap">Swan Time</h1>
           {userName && (
-            <span className="text-[11px] text-mute font-mono">{userName.split(/\s+/)[0]}</span>
+            <span className="text-[11px] text-mute truncate">{userName.split(/\s+/)[0]}</span>
+          )}
+          {streaksOn && streak > 0 && (
+            <span
+              className="text-[11px] text-accent tabular font-medium"
+              title={`${streak} day streak (weekdays)`}
+            >
+              🔥 {streak}
+            </span>
           )}
         </div>
-        <div className="flex items-center gap-3 no-drag">
+        <div className="flex items-center gap-3 no-drag shrink-0">
           <button
             onClick={() => swan.batchOpen()}
-            className="text-[11px] uppercase tracking-[0.08em] text-mute hover:text-ink font-medium"
+            className="swan-hover-text text-[11px] uppercase tracking-[0.08em] font-medium"
             title="Batch entry"
           >
             Batch
           </button>
           <button
-            onClick={onOpenSettings}
-            className="text-[11px] uppercase tracking-[0.08em] text-mute hover:text-ink font-medium"
-            title="Settings (⌘,)"
+            onClick={onOpenToday}
+            className="swan-hover-icon"
+            title="Today"
+            aria-label="Today"
           >
-            Settings
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="9" />
+              <polyline points="12 7 12 12 15.5 14" />
+            </svg>
+          </button>
+          {levelsOn && (
+            <button
+              onClick={onOpenLevels}
+              className="swan-hover-icon"
+              title="Category levels"
+              aria-label="Category levels"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 20 H21 M6 20 V13 M12 20 V9 M18 20 V5" />
+              </svg>
+            </button>
+          )}
+          <button
+            onClick={onOpenSettings}
+            className="swan-hover-icon"
+            title="Settings (⌘,)"
+            aria-label="Settings"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
           </button>
           <button
-            onClick={onOpenToday}
-            className="text-[11px] uppercase tracking-[0.08em] text-mute hover:text-ink font-medium"
+            onClick={() => swan.openBoard()}
+            title="Open your Monday board"
+            aria-label="Open Monday board"
           >
-            Today
+            <img src={mondayLogo} alt="Monday" className="swan-hover-img h-[14px] w-auto" />
           </button>
         </div>
       </div>
@@ -136,7 +199,7 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, userName, last
       {lastLog && (
         <div className="mb-3 px-3 py-1.5 bg-ink/[0.04] border border-line rounded-md flex items-center justify-between animate-rise">
           <span className="text-[12px] text-ink">
-            Logged <span className="font-mono tabular">{minutesToHm(lastLog.minutes)}</span>
+            Logged <span className="tabular">{minutesToHm(lastLog.minutes)}</span>
           </span>
           <button
             onClick={onClearLastLog}
@@ -179,6 +242,13 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, userName, last
       <AiStrip
         {...suggestion}
         onAccept={() => {
+          if (suggestion.clientName) {
+            const match = clients.find(c => c.name.toLowerCase() === suggestion.clientName!.toLowerCase());
+            if (match) {
+              setClientId(match.id);
+              setClientName(match.name);
+            }
+          }
           if (suggestion.division) setDivision(suggestion.division);
           if (suggestion.category) setCategory(suggestion.category);
           setDismissed(true);
@@ -197,20 +267,24 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, userName, last
             setClientName(label);
           }}
         />
-        <div className="grid grid-cols-2 gap-2">
-          <Picker
-            label="Division"
-            value={division}
-            options={DIVISIONS.map(d => ({ id: d, label: d }))}
-            onChange={(_, l) => setDivision(l)}
-          />
-          <Picker
-            label="Category"
-            value={category}
-            options={CATEGORIES.map(c => ({ id: c, label: c }))}
-            onChange={(_, l) => setCategory(l)}
-          />
-        </div>
+        <Picker
+          label="Division"
+          value={division}
+          options={DIVISIONS.map(d => ({ id: d, label: d }))}
+          onChange={(_, l) => setDivision(l)}
+          highlightId={primaryDivision}
+        />
+        <Picker
+          label="Category"
+          value={category}
+          options={CATEGORIES.map(c => ({ id: c, label: c }))}
+          onChange={(_, l) => setCategory(l)}
+          optionMeta={
+            levelsOn
+              ? (_, label) => <LevelPill level={levelFor(categoryMinutes[label] || 0)} />
+              : undefined
+          }
+        />
       </div>
 
       {!name && recents.length > 0 && (
@@ -219,18 +293,24 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, userName, last
             Recent
           </div>
           <div className="space-y-1">
-            {recents.slice(0, 4).map(r => (
-              <button
-                key={r.name + r.lastUsed}
-                onClick={() => applyRecent(r)}
-                className="w-full text-left px-2 py-1.5 rounded hover:bg-black/[0.04] group"
-              >
-                <div className="text-[13px] text-ink truncate">{r.name}</div>
-                <div className="text-[11px] text-mute truncate">
-                  {[r.clientName, r.division, r.category].filter(Boolean).join(' · ') || '—'}
-                </div>
-              </button>
-            ))}
+            {recents.slice(0, 4).map(r => {
+              const lvl = levelsOn && r.category ? levelFor(categoryMinutes[r.category] || 0) : 0;
+              return (
+                <button
+                  key={r.name + r.lastUsed}
+                  onClick={() => applyRecent(r)}
+                  className="w-full text-left px-2 py-1.5 rounded hover:bg-black/[0.04] group"
+                >
+                  <div className="text-[13px] text-ink truncate">{r.name}</div>
+                  <div className="text-[11px] text-mute truncate flex items-center gap-1.5">
+                    <span className="truncate">
+                      {[r.clientName, r.division, r.category].filter(Boolean).join(' · ') || '—'}
+                    </span>
+                    <LevelPill level={lvl} title={r.category ? `Lv ${lvl} in ${r.category}` : undefined} />
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -242,8 +322,11 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, userName, last
           className="no-drag w-full py-2.5 bg-ink text-paper rounded-md text-[13px] font-medium tracking-tight disabled:opacity-30 hover:bg-ink/90 transition-colors"
         >
           Start timer
-          <span className="ml-2 font-mono text-[11px] opacity-60">⌘↵</span>
+          <span className="ml-2  text-[11px] opacity-60">⌘↵</span>
         </button>
+        <div className="mt-1.5 text-center text-[9px] tabular text-mute/70 tracking-wide">
+          v{__APP_VERSION__}
+        </div>
       </div>
     </div>
   );

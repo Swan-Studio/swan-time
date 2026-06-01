@@ -10,12 +10,16 @@ export type RecentEntry = {
 };
 
 export type RunningTimer = {
+  // Start of the current "run leg". Reset to Date.now() on each resume so the
+  // tick math `accumulatedMs + (now - startedAt)` always reflects total elapsed.
   startedAt: number;
   name: string;
   clientId?: number;
   clientName?: string;
   division?: string;
   category?: string;
+  pausedAt?: number;
+  accumulatedMs?: number;
 } | null;
 
 export type Settings = {
@@ -23,6 +27,11 @@ export type Settings = {
   anthropicApiKey?: string;
   hotkey: string;
   primaryDivision?: string;
+  closeOnBlur: boolean;
+  streaksEnabled: boolean;
+  levelsEnabled: boolean;
+  nudgesEnabled?: boolean;
+  displayNameOverride?: string;
 };
 
 type Schema = {
@@ -32,6 +41,8 @@ type Schema = {
   boardId?: number;
   userId?: number;
   userName?: string;
+  userEmail?: string;
+  accountSlug?: string;
 };
 
 export const store = new Store<Schema>({
@@ -39,7 +50,13 @@ export const store = new Store<Schema>({
   defaults: {
     running: null,
     recents: [],
-    settings: { aiEnabled: false, hotkey: 'CommandOrControl+Shift+T' }
+    settings: {
+      aiEnabled: false,
+      hotkey: 'CommandOrControl+Alt+T',
+      closeOnBlur: true,
+      streaksEnabled: true,
+      levelsEnabled: true
+    }
   }
 });
 

@@ -3,6 +3,8 @@ import { swan } from '../lib/swan';
 import { Picker } from '../components/Picker';
 import { CATEGORIES, DIVISIONS, Client } from '../lib/constants';
 import { minutesToHm } from '../lib/format';
+import { levelFor } from '../lib/levels';
+import { LevelPill } from '../components/LevelPill';
 
 type Row = {
   id: string;
@@ -22,6 +24,13 @@ function todayIso(): string {
   // Local date, not UTC — otherwise users in AU/Asia get yesterday's date
   // when their local "today" is ahead of UTC.
   const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function isoDaysAgo(n: number): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - n);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -58,6 +67,9 @@ export function Batch({ onClose }: Props) {
   const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
   const [rows, setRows] = useState<Row[]>([newRow()]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [todayLoggedMinutes, setTodayLoggedMinutes] = useState(0);
+  const [levelsOn, setLevelsOn] = useState(true);
+  const [categoryMinutes, setCategoryMinutes] = useState<Record<string, number>>({});
   const [aiState, setAiState] = useState<{ enabled: boolean; hasKey: boolean }>({
     enabled: false,
     hasKey: false
@@ -69,12 +81,22 @@ export function Batch({ onClose }: Props) {
   const [postSummary, setPostSummary] = useState<{ ok: number; fail: number } | null>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
 
+  async function refreshTodayLogged() {
+    try {
+      const entries = await swan.todayEntries();
+      setTodayLoggedMinutes(entries.reduce((acc: number, e: any) => acc + (e.minutes || 0), 0));
+    } catch {
+      // ignore — keep previous value
+    }
+  }
+
   useEffect(() => {
     swan.listClients().then(setClients).catch(() => {});
     swan
       .aiStatus()
       .then(s => setAiState({ enabled: s.aiEnabled, hasKey: s.hasUserKey || s.hasSharedKey }));
     swan.getSettings().then(s => {
+      setLevelsOn(s.levelsEnabled !== false);
       if (s.primaryDivision) {
         setPrimaryDivision(s.primaryDivision);
         // Default the existing first row to the primary division.
@@ -83,6 +105,8 @@ export function Batch({ onClose }: Props) {
         );
       }
     });
+    swan.getStats().then(s => setCategoryMinutes(s.categoryMinutes)).catch(() => {});
+    refreshTodayLogged();
     setTimeout(() => textRef.current?.focus(), 100);
   }, []);
 
@@ -139,12 +163,16 @@ export function Batch({ onClose }: Props) {
   }
 
   function shiftDate(id: string, days: number) {
+    const minDate = isoDaysAgo(6);
+    const maxDate = todayIso();
     setRows(rs =>
       rs.map(r => {
         if (r.id !== id) return r;
         const d = new Date(`${r.date}T00:00:00`);
         d.setDate(d.getDate() + days);
-        return { ...r, date: d.toISOString().slice(0, 10) };
+        const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        if (next < minDate || next > maxDate) return r;
+        return { ...r, date: next };
       })
     );
   }
@@ -165,6 +193,11 @@ export function Batch({ onClose }: Props) {
 
   const allReady = validity.every(v => v.ready);
   const totalMinutes = rows.reduce((acc, r) => acc + (r.durationMinutes || 0), 0);
+  const today = todayIso();
+  const todayBatchMinutes = rows
+    .filter(r => r.date === today)
+    .reduce((acc, r) => acc + (r.durationMinutes || 0), 0);
+  const todayCombined = todayLoggedMinutes + todayBatchMinutes;
 
   async function postAll() {
     if (!allReady) return;
@@ -196,6 +229,7 @@ export function Batch({ onClose }: Props) {
     const fail = res.results.length - ok;
     setPostSummary({ ok, fail });
     setPosting(false);
+    refreshTodayLogged();
   }
 
   function clearPosted() {
@@ -211,17 +245,26 @@ export function Batch({ onClose }: Props) {
     <div className="flex flex-col h-full pt-[3px]">
       <header className="px-6 pt-3 pb-3 flex items-center justify-between draggable">
         <div className="flex items-baseline gap-3">
-          <h1 className="font-display text-[20px] font-medium tracking-tight">Batch entry</h1>
+          <h1 className="text-[20px] font-medium tracking-tight">Batch entry</h1>
           <span className="text-[11px] text-mute tabular">
             {rows.length} {rows.length === 1 ? 'row' : 'rows'} · {minutesToHm(totalMinutes)}
           </span>
         </div>
-        <button
-          onClick={onClose}
-          className="no-drag text-[11px] uppercase tracking-[0.08em] text-mute hover:text-ink font-medium"
-        >
-          Close
-        </button>
+        <div className="flex items-center gap-3 no-drag">
+          <span className="text-[11px] text-mute tabular" title="Already logged today + this batch (today's rows)">
+            today <span className="text-ink">{minutesToHm(todayLoggedMinutes)}</span>
+            <span className="mx-1 text-mute/60">+</span>
+            <span className="text-ink">{minutesToHm(todayBatchMinutes)}</span>
+            <span className="mx-1 text-mute/60">=</span>
+            <span className="text-ink font-medium">{minutesToHm(todayCombined)}</span>
+          </span>
+          <button
+            onClick={onClose}
+            className="text-[11px] uppercase tracking-[0.08em] text-mute hover:text-ink font-medium"
+          >
+            Close
+          </button>
+        </div>
       </header>
 
       <section className="px-6 pb-3 no-drag">
@@ -246,7 +289,7 @@ export function Batch({ onClose }: Props) {
             className="px-3 py-1.5 bg-ink text-paper rounded-md text-[12px] font-medium hover:bg-ink/90 disabled:opacity-30 transition-colors"
           >
             {parsing ? 'Parsing…' : 'Parse with AI'}
-            <span className="ml-2 font-mono text-[10px] opacity-60">⌘↵</span>
+            <span className="ml-2  text-[10px] opacity-60">⌘↵</span>
           </button>
           {!aiAvailable && (
             <span className="text-[11px] text-mute">
@@ -259,7 +302,7 @@ export function Batch({ onClose }: Props) {
         </div>
       </section>
 
-      <section className="flex-1 overflow-y-auto px-4 pb-2 no-drag">
+      <section className="flex-1 overflow-auto px-4 pb-2 no-drag">
         {rows.map((r, i) => {
           const v = validity[i];
           const lowConfidence = r.confidence > 0 && r.confidence < 0.5;
@@ -270,40 +313,45 @@ export function Batch({ onClose }: Props) {
               ? 'bg-accent/[0.08]'
               : lowConfidence
               ? 'bg-yellow-500/[0.06]'
-              : 'hover:bg-ink/[0.02]';
+              : 'hover:bg-ink/[0.08]';
           return (
             <div
               key={r.id}
-              className={`grid grid-cols-[88px_1.4fr_1fr_1fr_1fr_64px_24px] gap-2 items-center px-2 py-1.5 rounded-md ${tone}`}
+              className={`grid grid-cols-[88px_220px_180px_180px_180px_80px_24px] w-max gap-2 items-center px-2 py-1.5 rounded-md ${tone}`}
             >
-              <button
-                onClick={() => {
-                  const next = prompt('Date (YYYY-MM-DD or "today"/"yesterday")', r.date);
-                  if (!next) return;
-                  const lower = next.trim().toLowerCase();
-                  if (lower === 'today') update(r.id, { date: todayIso() });
-                  else if (lower === 'yesterday') {
-                    const d = new Date();
-                    d.setDate(d.getDate() - 1);
-                    update(r.id, { date: d.toISOString().slice(0, 10) });
-                  } else if (/^\d{4}-\d{2}-\d{2}$/.test(next.trim())) {
-                    update(r.id, { date: next.trim() });
-                  }
-                }}
+              <div
+                className="flex items-center justify-between bg-chip rounded h-[28px] px-1"
                 onWheel={e => {
                   e.preventDefault();
                   shiftDate(r.id, e.deltaY > 0 ? -1 : 1);
                 }}
-                className="px-2 py-1.5 bg-chip rounded text-[12px] font-mono tabular text-left hover:bg-ink/[0.06]"
                 title={r.date}
               >
-                {formatDateLabel(r.date)}
-              </button>
+                <button
+                  onClick={() => shiftDate(r.id, -1)}
+                  disabled={r.date <= isoDaysAgo(6)}
+                  className="px-1 text-mute hover:text-ink disabled:opacity-25 text-[14px] leading-none"
+                  aria-label="Previous day"
+                >
+                  ‹
+                </button>
+                <span className="text-[12px] tabular truncate px-1">
+                  {formatDateLabel(r.date)}
+                </span>
+                <button
+                  onClick={() => shiftDate(r.id, 1)}
+                  disabled={r.date >= todayIso()}
+                  className="px-1 text-mute hover:text-ink disabled:opacity-25 text-[14px] leading-none"
+                  aria-label="Next day"
+                >
+                  ›
+                </button>
+              </div>
               <input
                 value={r.name}
                 onChange={e => update(r.id, { name: e.target.value })}
                 placeholder="Activity"
-                className="px-2 py-1.5 bg-chip rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-ink/15"
+                className="w-full px-2 py-1.5 bg-chip rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-ink/15"
               />
               <Picker
                 label="Client"
@@ -317,12 +365,18 @@ export function Batch({ onClose }: Props) {
                 value={r.division}
                 options={DIVISIONS.map(d => ({ id: d, label: d }))}
                 onChange={(_, l) => update(r.id, { division: l })}
+                highlightId={primaryDivision}
               />
               <Picker
                 label="Category"
                 value={r.category}
                 options={CATEGORIES.map(c => ({ id: c, label: c }))}
                 onChange={(_, l) => update(r.id, { category: l })}
+                optionMeta={
+                  levelsOn
+                    ? (_, label) => <LevelPill level={levelFor(categoryMinutes[label] || 0)} />
+                    : undefined
+                }
               />
               <input
                 type="number"
@@ -331,7 +385,7 @@ export function Batch({ onClose }: Props) {
                 onChange={e =>
                   update(r.id, { durationMinutes: Math.max(1, Number(e.target.value) || 0) })
                 }
-                className="px-2 py-1.5 bg-chip rounded text-[12px] font-mono tabular text-right focus:outline-none focus:ring-1 focus:ring-ink/15"
+                className="w-full px-2 py-1.5 bg-chip rounded text-[12px]  tabular text-right focus:outline-none focus:ring-1 focus:ring-ink/15"
               />
               <button
                 onClick={() => removeRow(r.id)}

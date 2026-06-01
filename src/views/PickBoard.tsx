@@ -6,9 +6,10 @@ type Board = { id: number; name: string };
 type Props = {
   userName?: string;
   onPicked: () => void;
+  onSignOut?: () => void;
 };
 
-export function PickBoard({ userName, onPicked }: Props) {
+export function PickBoard({ userName, onPicked, onSignOut }: Props) {
   const [boards, setBoards] = useState<Board[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -34,7 +35,7 @@ export function PickBoard({ userName, onPicked }: Props) {
   return (
     <div className="flex flex-col h-full px-5 pt-4 pb-5 animate-rise">
       <div className="draggable mb-3">
-        <h1 className="font-display text-[18px] font-medium tracking-tight">Pick your board</h1>
+        <h1 className="text-[18px] font-medium tracking-tight">Pick your board</h1>
         <p className="text-[11px] text-mute leading-relaxed mt-1">
           We couldn't auto-find a tracker board for{' '}
           <span className="text-ink">{userName?.split(/\s+/)[0] || 'you'}</span>. Pick yours from
@@ -53,8 +54,18 @@ export function PickBoard({ userName, onPicked }: Props) {
       <div className="flex-1 overflow-y-auto no-drag">
         {loading && <div className="px-2 py-4 text-[12px] text-mute">Loading…</div>}
         {!loading && filtered.length === 0 && (
-          <div className="px-2 py-6 text-center text-[12px] text-mute">
-            No tracker boards match. Ask an admin to create one.
+          <div className="px-2 py-6 text-center text-[12px] text-mute space-y-2">
+            <div>No tracker boards visible to your account.</div>
+            <div className="text-[11px]">
+              {onSignOut && (
+                <button
+                  onClick={onSignOut}
+                  className="underline hover:text-ink"
+                >
+                  Sign out and try a different account
+                </button>
+              )}
+            </div>
           </div>
         )}
         {!loading &&
