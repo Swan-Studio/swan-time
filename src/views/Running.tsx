@@ -72,7 +72,7 @@ export function Running({ timer, onStopped, onNeedsCategory }: Props) {
     onStopped();
   }
 
-  const breadcrumb = [timer.clientName, timer.division, timer.category].filter(Boolean).join(' · ') || 'No category yet';
+  const breadcrumb = [timer.clientName, timer.creativeName, timer.division, timer.category].filter(Boolean).join(' · ') || 'No category yet';
 
   return (
     <div className="flex flex-col h-full px-5 pt-4 pb-5 animate-rise">

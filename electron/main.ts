@@ -31,6 +31,7 @@ import {
   getAccountSlug,
   findUserBoard,
   listClients,
+  listCreatives,
   listTimeTrackerBoards,
   logEntry,
   todayEntries,
@@ -38,10 +39,12 @@ import {
   lastLogStatus,
   deleteEntry,
   getBoardUrl,
+  getBoardCols,
   getStats,
   updateEntry,
   clearColumnCache,
   clearClientsCache,
+  clearCreativesCache,
   clearEntriesCache
 } from './monday';
 import { suggestCategory, dailySummary, aiStatus, parseBatch } from './ai';
@@ -204,7 +207,7 @@ function createTray() {
         }
       },
       { type: 'separator' },
-      { label: 'Sign out', click: async () => { await clearToken(); store.clear(); clearColumnCache(); clearClientsCache(); clearEntriesCache(); } },
+      { label: 'Sign out', click: async () => { await clearToken(); store.clear(); clearColumnCache(); clearClientsCache(); clearCreativesCache(); clearEntriesCache(); } },
       { label: 'Quit Swan Time', role: 'quit' }
     ]);
     tray?.popUpContextMenu(menu);
@@ -361,12 +364,26 @@ function registerIpc() {
     store.delete('boardId');
     clearColumnCache();
     clearClientsCache();
+    clearCreativesCache();
     clearEntriesCache();
     return { authed: false };
   });
 
   // Monday
   ipcMain.handle('monday:clients', () => listClients());
+  ipcMain.handle('monday:creatives', () => listCreatives());
+  // Capability check: the Creative picker only renders when the user's board
+  // carries a board_relation column connected to the Creatives board. Boards
+  // without the column see no UI change at all.
+  ipcMain.handle('monday:creativesEnabled', async () => {
+    const boardId = store.get('boardId');
+    if (!boardId) return false;
+    try {
+      return (await getBoardCols(boardId)).creative !== null;
+    } catch {
+      return false;
+    }
+  });
   ipcMain.handle('monday:listTimeTrackerBoards', () => listTimeTrackerBoards());
   ipcMain.handle('monday:setBoard', (_e, boardId: number, boardName?: string) => {
     const prev = store.get('boardId');
@@ -405,6 +422,7 @@ function registerIpc() {
     itemId: number;
     name: string;
     clientId?: number;
+    creativeId?: number;
     division: string;
     category: string;
     durationMinutes: number;
@@ -429,6 +447,8 @@ function registerIpc() {
       name: payload.name,
       clientId: payload.clientId,
       clientName: payload.clientName,
+      creativeId: payload.creativeId,
+      creativeName: payload.creativeName,
       division: payload.division,
       category: payload.category,
       accumulatedMs: 0
@@ -489,6 +509,7 @@ function registerIpc() {
         userId,
         name: cur.name,
         clientId: cur.clientId,
+        creativeId: cur.creativeId,
         division: cur.division,
         category: cur.category,
         startedAt: endedAt - effectiveMs,
@@ -505,6 +526,8 @@ function registerIpc() {
       name: cur.name,
       clientId: cur.clientId,
       clientName: cur.clientName,
+      creativeId: cur.creativeId,
+      creativeName: cur.creativeName,
       division: cur.division,
       category: cur.category
     });
@@ -575,6 +598,8 @@ function registerIpc() {
     durationMinutes: number;
     clientId?: number;
     clientName?: string;
+    creativeId?: number;
+    creativeName?: string;
     division: string;
     category: string;
   }>) => {
@@ -592,6 +617,7 @@ function registerIpc() {
           userId,
           name: row.name,
           clientId: row.clientId,
+          creativeId: row.creativeId,
           division: row.division,
           category: row.category,
           startedAt,
@@ -601,6 +627,8 @@ function registerIpc() {
           name: row.name,
           clientId: row.clientId,
           clientName: row.clientName,
+          creativeId: row.creativeId,
+          creativeName: row.creativeName,
           division: row.division,
           category: row.category
         });
@@ -716,6 +744,20 @@ app.whenReady().then(() => {
     const token = await getToken();
     if (!token || store.get('running')) showWindow();
   }, 400);
+
+  // Warm the creatives index in the background so the first picker open is
+  // instant even when the disk cache is stale or missing. Capability-gated:
+  // boards without the creative column never trigger the paging pass.
+  setTimeout(async () => {
+    try {
+      const boardId = store.get('boardId');
+      if (!boardId) return;
+      const cols = await getBoardCols(boardId);
+      if (cols.creative) await listCreatives();
+    } catch (e) {
+      console.warn('creatives warm-up skipped:', (e as Error).message);
+    }
+  }, 2_000);
 });
 
 app.on('window-all-closed', () => {

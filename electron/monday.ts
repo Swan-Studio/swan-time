@@ -1,4 +1,5 @@
 import { getToken } from './oauth';
+import { store } from './store';
 
 const ENDPOINT = 'https://api.monday.com/v2';
 
@@ -8,6 +9,7 @@ const ENDPOINT = 'https://api.monday.com/v2';
 // one user's IDs. See discoverBoardColumns below.
 type ColumnMap = {
   client: string | null;
+  creative: string | null;
   person: string | null;
   date: string | null;
   timeTracking: string | null;
@@ -23,6 +25,7 @@ export function clearColumnCache(boardId?: number) {
 }
 
 export const CLIENTS_BOARD_ID = 1909942413;
+export const CREATIVES_BOARD_ID = 1909945576;
 
 export const DIVISIONS = [
   'Social Media Management',
@@ -198,6 +201,27 @@ async function discoverBoardColumns(boardId: number): Promise<ColumnMap> {
   const byType = (type: string) => columns.filter(c => c.type === type);
   const singleId = (type: string) => byType(type)[0]?.id ?? null;
 
+  // A board can now carry two board_relation columns — one connecting to the
+  // Clients board, one to the Creatives board. Disambiguate by parsing each
+  // column's settings for the board it links to, rather than taking the first.
+  const relationBoardIds = (settingsStr: string | null | undefined): number[] => {
+    if (!settingsStr) return [];
+    try {
+      const ids = JSON.parse(settingsStr)?.boardIds;
+      return Array.isArray(ids) ? ids.map(Number) : [];
+    } catch {
+      return [];
+    }
+  };
+  const relations = byType('board_relation');
+  const creative = relations.find(c => relationBoardIds(c.settings_str).includes(CREATIVES_BOARD_ID))?.id ?? null;
+  const client =
+    relations.find(c => relationBoardIds(c.settings_str).includes(CLIENTS_BOARD_ID))?.id ??
+    // Legacy fallback: a single relation column with unparseable settings is
+    // the client column (pre-creatives behaviour).
+    relations.find(c => c.id !== creative)?.id ??
+    null;
+
   // For the two status/label columns, classify by which canonical label set
   // each column's settings contain. Falls back to title match if the labels
   // don't line up (e.g. board still empty or renamed).
@@ -222,7 +246,8 @@ async function discoverBoardColumns(boardId: number): Promise<ColumnMap> {
   if (!category) category = statuses.find(s => /category/i.test(s.title))?.id ?? null;
 
   return {
-    client: singleId('board_relation'),
+    client,
+    creative,
     person: singleId('people') ?? singleId('person'), // 'person' is the legacy type
     date: singleId('date'),
     timeTracking: singleId('time_tracking'),
@@ -363,11 +388,110 @@ export async function listClients(force = false): Promise<ClientList> {
   return clientsInflight;
 }
 
+// ---------------------------------------------------------------------------
+// Creatives index
+//
+// The Creatives board holds ~6k items — far too many to fetch per keystroke,
+// and too many for a single items_page call. So we page through the whole
+// board once (name + client link + status), keep only non-Done/non-Archived
+// items, and persist the index to disk via electron-store. Search then runs
+// entirely in-renderer against the local index: instant from the first
+// keystroke, even on a cold app launch (stale index served immediately while
+// a background refresh runs).
+// ---------------------------------------------------------------------------
+export type Creative = { id: number; name: string; clientId?: number };
+
+// These two columns live on the shared Creatives board (one board for the
+// whole org, like CLIENTS_BOARD_ID), so their IDs are stable and safe to pin.
+const CREATIVES_STATUS_COL = 'status';
+const CREATIVES_CLIENT_COL = 'link_to_clients';
+const CREATIVES_EXCLUDED_STATUSES = new Set(['Done', 'Archived']);
+const CREATIVES_TTL_MS = 15 * 60_000;
+let creativesInflight: Promise<Creative[]> | null = null;
+
+export function clearCreativesCache() {
+  store.delete('creativesCache');
+}
+
+async function fetchAllCreatives(): Promise<Creative[]> {
+  type Item = {
+    id: string;
+    name: string;
+    // linked_item_ids comes from the BoardRelationValue fragment — on API
+    // 2024-10 board_relation columns return text/value as null, so the
+    // fragment is the only way to read the linked client.
+    column_values: Array<{ id: string; text: string | null; linked_item_ids?: string[] }>;
+  };
+  const fields = `cursor items { id name column_values(ids: ["${CREATIVES_STATUS_COL}", "${CREATIVES_CLIENT_COL}"]) { id text ... on BoardRelationValue { linked_item_ids } } }`;
+
+  const out: Creative[] = [];
+  let cursor: string | null = null;
+  // ~6k items / 500 per page → ~12 requests. Hard page cap as a safety net so
+  // a cursor bug can never loop forever.
+  for (let page = 0; page < 40; page++) {
+    let pageData: { cursor: string | null; items: Item[] };
+    if (cursor) {
+      const data = await gql<{ next_items_page: { cursor: string | null; items: Item[] } }>(
+        `query ($cursor: String!) { next_items_page(cursor: $cursor, limit: 500) { ${fields} } }`,
+        { cursor }
+      );
+      pageData = data.next_items_page;
+    } else {
+      const data = await gql<{
+        boards: Array<{ items_page: { cursor: string | null; items: Item[] } }>;
+      }>(
+        `query ($ids: [ID!]) { boards(ids: $ids) { items_page(limit: 500) { ${fields} } } }`,
+        { ids: [String(CREATIVES_BOARD_ID)] }
+      );
+      pageData = data.boards[0]?.items_page ?? { cursor: null, items: [] };
+    }
+    for (const i of pageData.items) {
+      const get = (id: string) => i.column_values.find(c => c.id === id);
+      const status = get(CREATIVES_STATUS_COL)?.text ?? '';
+      if (CREATIVES_EXCLUDED_STATUSES.has(status)) continue;
+      const linkedId = Number(get(CREATIVES_CLIENT_COL)?.linked_item_ids?.[0]);
+      out.push({
+        id: Number(i.id),
+        name: i.name,
+        clientId: Number.isFinite(linkedId) ? linkedId : undefined
+      });
+    }
+    cursor = pageData.cursor;
+    if (!cursor) break;
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function listCreatives(force = false): Promise<Creative[]> {
+  const cached = store.get('creativesCache');
+  const fresh = cached && Date.now() - cached.at < CREATIVES_TTL_MS;
+  if (!force && fresh) return cached.data;
+
+  if (!creativesInflight) {
+    creativesInflight = fetchAllCreatives()
+      .then(list => {
+        store.set('creativesCache', { at: Date.now(), data: list });
+        return list;
+      })
+      .finally(() => { creativesInflight = null; });
+  }
+  // Stale-while-revalidate: serve the disk index immediately so search never
+  // waits on a ~12-request paging pass; the refresh lands for next time.
+  if (cached) {
+    creativesInflight.catch(err =>
+      console.warn('[monday] creatives refresh failed, serving stale index:', (err as Error).message)
+    );
+    return cached.data;
+  }
+  return creativesInflight;
+}
+
 type LogParams = {
   boardId: number;
   userId: number;
   name: string;
   clientId?: number;
+  creativeId?: number;
   division: string;
   category: string;
   startedAt: number;
@@ -402,6 +526,9 @@ export async function logEntry(p: LogParams) {
   };
   if (p.clientId && cols.client) {
     columnValues[cols.client] = { item_ids: [p.clientId] };
+  }
+  if (p.creativeId && cols.creative) {
+    columnValues[cols.creative] = { item_ids: [p.creativeId] };
   }
 
   // create_labels_if_missing: true so canonical Division/Category values from
@@ -451,6 +578,7 @@ type UpdateEntryParams = {
   itemId: number;
   name: string;
   clientId?: number;
+  creativeId?: number;
   division: string;
   category: string;
   durationMinutes: number;
@@ -469,6 +597,9 @@ export async function updateEntry(p: UpdateEntryParams) {
   };
   if (cols.client) {
     columnValues[cols.client] = p.clientId ? { item_ids: [p.clientId] } : null;
+  }
+  if (cols.creative) {
+    columnValues[cols.creative] = p.creativeId ? { item_ids: [p.creativeId] } : null;
   }
   if (p.date && /^\d{4}-\d{2}-\d{2}$/.test(p.date) && cols.date) {
     columnValues[cols.date] = { date: p.date };
@@ -521,6 +652,7 @@ export type TodayEntry = {
   id: number;
   name: string;
   clientName?: string;
+  creativeName?: string;
   division?: string;
   category?: string;
   minutes: number;
@@ -574,7 +706,10 @@ async function fetchBoardEntries(boardId: number): Promise<TodayEntry[]> {
           items: Array<{
             id: string;
             name: string;
-            column_values: Array<{ id: string; text: string; value: string | null }>;
+            // display_value comes from the BoardRelationValue fragment — on API
+            // 2024-10 board_relation columns (client, creative) return text as
+            // null, so the fragment is the only way to read the linked names.
+            column_values: Array<{ id: string; text: string; value: string | null; display_value?: string | null }>;
           }>;
         };
       }>;
@@ -584,7 +719,7 @@ async function fetchBoardEntries(boardId: number): Promise<TodayEntry[]> {
           items_page(limit: 100) {
             items {
               id name
-              column_values { id text value }
+              column_values { id text value ... on BoardRelationValue { display_value } }
             }
           }
         }
@@ -622,7 +757,8 @@ async function fetchBoardEntries(boardId: number): Promise<TodayEntry[]> {
       results.push({
         id: Number(i.id),
         name: displayName,
-        clientName: get(cols.client)?.text || undefined,
+        clientName: get(cols.client)?.display_value || get(cols.client)?.text || undefined,
+        creativeName: get(cols.creative)?.display_value || get(cols.creative)?.text || undefined,
         division: get(cols.division)?.text || undefined,
         category: get(cols.category)?.text || undefined,
         minutes,

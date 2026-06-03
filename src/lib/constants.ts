@@ -34,10 +34,14 @@ export type Category = (typeof CATEGORIES)[number];
 
 export type Client = { id: number; name: string };
 
+export type Creative = { id: number; name: string; clientId?: number };
+
 export type Recent = {
   name: string;
   clientId?: number;
   clientName?: string;
+  creativeId?: number;
+  creativeName?: string;
   division?: string;
   category?: string;
   lastUsed: number;
@@ -48,6 +52,8 @@ export type Running = {
   name: string;
   clientId?: number;
   clientName?: string;
+  creativeId?: number;
+  creativeName?: string;
   division?: string;
   category?: string;
   pausedAt?: number;

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { swan } from '../lib/swan';
 import { Picker } from '../components/Picker';
-import { CATEGORIES, DIVISIONS, Client } from '../lib/constants';
+import { CATEGORIES, DIVISIONS, Client, Creative } from '../lib/constants';
+import { clientForCreative, creativeMatchesClient, creativesForClient } from '../lib/creatives';
 import { minutesToHm } from '../lib/format';
 import { flagEntry } from '../lib/flags';
 import { levelFor } from '../lib/levels';
@@ -11,6 +12,7 @@ type Entry = {
   id: number;
   name: string;
   clientName?: string;
+  creativeName?: string;
   division?: string;
   category?: string;
   minutes: number;
@@ -21,6 +23,8 @@ type Draft = {
   name: string;
   clientId?: number;
   clientName?: string;
+  creativeId?: number;
+  creativeName?: string;
   division?: string;
   category?: string;
   durationMinutes: number;
@@ -65,6 +69,8 @@ export function Today({ onClose }: Props) {
   const [levelsOn, setLevelsOn] = useState(true);
   const [categoryMinutes, setCategoryMinutes] = useState<Record<string, number>>({});
   const [clients, setClients] = useState<Client[]>([]);
+  const [creatives, setCreatives] = useState<Creative[]>([]);
+  const [creativesOn, setCreativesOn] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
@@ -90,11 +96,19 @@ export function Today({ onClose }: Props) {
     });
     swan.getStats().then(s => setCategoryMinutes(s.categoryMinutes)).catch(() => {});
     swan.listClients().then(setClients).catch(() => {});
+    swan.creativesEnabled().then((on: boolean) => {
+      if (!on) return;
+      setCreativesOn(true);
+      swan.listCreatives().then(setCreatives).catch(() => {});
+    }).catch(() => {});
   }, []);
 
   function startEdit(e: Entry) {
     const matchedClient = e.clientName
       ? clients.find(c => c.name.toLowerCase() === e.clientName!.toLowerCase())
+      : undefined;
+    const matchedCreative = e.creativeName
+      ? creatives.find(c => c.name.toLowerCase() === e.creativeName!.toLowerCase())
       : undefined;
     setEditingId(e.id);
     setEditError(null);
@@ -102,6 +116,8 @@ export function Today({ onClose }: Props) {
       name: e.name,
       clientId: matchedClient?.id,
       clientName: matchedClient?.name ?? e.clientName,
+      creativeId: matchedCreative?.id,
+      creativeName: matchedCreative?.name ?? e.creativeName,
       division: e.division,
       category: e.category,
       durationMinutes: e.minutes,
@@ -131,6 +147,7 @@ export function Today({ onClose }: Props) {
       itemId: editingId,
       name: draft.name.trim(),
       clientId: draft.clientId,
+      creativeId: draft.creativeId,
       division: draft.division,
       category: draft.category,
       durationMinutes: draft.durationMinutes,
@@ -214,9 +231,37 @@ export function Today({ onClose }: Props) {
                       placeholder="—"
                       options={clients.map(c => ({ id: c.id, label: c.name }))}
                       onChange={(id, label) =>
-                        setDraft(d => d && { ...d, clientId: Number(id), clientName: label })
+                        setDraft(d => {
+                          if (!d) return d;
+                          const next = { ...d, clientId: Number(id), clientName: label };
+                          if (!creativeMatchesClient(creatives, d.creativeId, Number(id))) {
+                            next.creativeId = undefined;
+                            next.creativeName = undefined;
+                          }
+                          return next;
+                        })
                       }
                     />
+                    {creativesOn && (
+                      <Picker
+                        label="Creative"
+                        value={draft!.creativeName}
+                        placeholder="—"
+                        options={creativesForClient(creatives, draft!.clientId).map(c => ({ id: c.id, label: c.name }))}
+                        onChange={(id, label) =>
+                          setDraft(d => {
+                            if (!d) return d;
+                            const owner = clientForCreative(creatives.find(c => c.id === Number(id)), clients);
+                            return {
+                              ...d,
+                              creativeId: Number(id),
+                              creativeName: label,
+                              ...(owner ? { clientId: owner.id, clientName: owner.name } : {})
+                            };
+                          })
+                        }
+                      />
+                    )}
                     <Picker
                       label="Division"
                       value={draft!.division}
@@ -329,7 +374,7 @@ export function Today({ onClose }: Props) {
                   <div className="text-[13px] text-ink truncate">{e.name}</div>
                   <div className="text-[11px] text-mute truncate flex items-center gap-1.5">
                     <span className="truncate">
-                      {[e.clientName, e.division, e.category].filter(Boolean).join(' · ') || '—'}
+                      {[e.clientName, e.creativeName, e.division, e.category].filter(Boolean).join(' · ') || '—'}
                     </span>
                     {levelsOn && e.category && (
                       <LevelPill

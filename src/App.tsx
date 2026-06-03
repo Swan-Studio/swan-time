@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { swan } from './lib/swan';
 import { Auth } from './views/Auth';
 import { Tracker } from './views/Tracker';
@@ -31,6 +31,20 @@ export default function App() {
   const [userName, setUserName] = useState<string | undefined>();
   const [boardWarning, setBoardWarning] = useState<string | null>(null);
   const [lastLog, setLastLog] = useState<{ minutes: number } | null>(null);
+  // Ghost-click shield: when the window appears or morphs between modes
+  // (nudge banner ↔ compact widget), a click aimed at the previous layout can
+  // land on whatever control now occupies that pixel — on Windows the nudge
+  // banner maps onto the Running screen's bottom buttons, and a double-click's
+  // second press was pausing/stopping timers users never meant to touch.
+  // Swallow pointer input briefly after every transition.
+  const [shielded, setShielded] = useState(false);
+  const shieldTimer = useRef<number | null>(null);
+
+  function raiseShield() {
+    setShielded(true);
+    if (shieldTimer.current) window.clearTimeout(shieldTimer.current);
+    shieldTimer.current = window.setTimeout(() => setShielded(false), 350);
+  }
 
   async function refresh() {
     const auth = await swan.authStatus();
@@ -56,11 +70,13 @@ export default function App() {
   useEffect(() => {
     refresh();
     const off = swan.onShow(async () => {
+      raiseShield();
       const t = await swan.getRunning();
       setTimer(t);
       if (t && screen !== 'stopgate' && screen !== 'batch') setScreen('running');
     });
     const offMode = swan.onWidgetMode(async mode => {
+      raiseShield();
       if (mode === 'batch') {
         setScreen('batch');
       } else if (mode === 'nudge') {
@@ -185,6 +201,7 @@ export default function App() {
           onExpand={() => swan.nudgeExpand()}
         />
       )}
+      {shielded && <div className="absolute inset-0 z-[60]" aria-hidden="true" />}
     </div>
   );
 }

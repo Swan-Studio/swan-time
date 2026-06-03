@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { swan } from '../lib/swan';
 import { Picker } from '../components/Picker';
 import { AiStrip } from '../components/AiStrip';
-import { CATEGORIES, DIVISIONS, Client, Recent } from '../lib/constants';
+import { CATEGORIES, DIVISIONS, Client, Creative, Recent } from '../lib/constants';
+import { clientForCreative, creativeMatchesClient, creativesForClient } from '../lib/creatives';
 import { minutesToHm } from '../lib/format';
 import { levelFor } from '../lib/levels';
 import { LevelPill } from '../components/LevelPill';
@@ -22,9 +23,13 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState<number | undefined>();
   const [clientName, setClientName] = useState<string | undefined>();
+  const [creativeId, setCreativeId] = useState<number | undefined>();
+  const [creativeName, setCreativeName] = useState<string | undefined>();
   const [division, setDivision] = useState<string | undefined>();
   const [category, setCategory] = useState<string | undefined>();
   const [clients, setClients] = useState<Client[]>([]);
+  const [creatives, setCreatives] = useState<Creative[]>([]);
+  const [creativesOn, setCreativesOn] = useState(false);
   const [recents, setRecents] = useState<Recent[]>([]);
   const [aiOn, setAiOn] = useState(false);
   const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
@@ -46,6 +51,11 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
   useEffect(() => {
     inputRef.current?.focus();
     swan.listClients().then(setClients).catch(() => {});
+    swan.creativesEnabled().then((on: boolean) => {
+      if (!on) return;
+      setCreativesOn(true);
+      swan.listCreatives().then(setCreatives).catch(() => {});
+    }).catch(() => {});
     swan.getRecents().then(setRecents);
     swan.getSettings().then(s => {
       setAiOn(s.aiEnabled);
@@ -86,8 +96,31 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
     setName(r.name);
     setClientId(r.clientId);
     setClientName(r.clientName);
+    setCreativeId(r.creativeId);
+    setCreativeName(r.creativeName);
     setDivision(r.division);
     setCategory(r.category);
+  }
+
+  function pickClient(id: number, label: string) {
+    setClientId(id);
+    setClientName(label);
+    // A creative belonging to a different client can't survive a client switch.
+    if (!creativeMatchesClient(creatives, creativeId, id)) {
+      setCreativeId(undefined);
+      setCreativeName(undefined);
+    }
+  }
+
+  function pickCreative(id: number, label: string) {
+    setCreativeId(id);
+    setCreativeName(label);
+    // Creatives belong to exactly one client — selecting one fills the client.
+    const owner = clientForCreative(creatives.find(c => c.id === id), clients);
+    if (owner) {
+      setClientId(owner.id);
+      setClientName(owner.name);
+    }
   }
 
   // Auto-set division based on client history. Pick the most-frequent division
@@ -104,7 +137,7 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
 
   async function start() {
     if (!name.trim()) return;
-    await swan.startTimer({ name: name.trim(), clientId, clientName, division, category });
+    await swan.startTimer({ name: name.trim(), clientId, clientName, creativeId, creativeName, division, category });
     onStarted();
   }
 
@@ -262,11 +295,17 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
           value={clientName}
           placeholder="—"
           options={clients.map(c => ({ id: c.id, label: c.name }))}
-          onChange={(id, label) => {
-            setClientId(Number(id));
-            setClientName(label);
-          }}
+          onChange={(id, label) => pickClient(Number(id), label)}
         />
+        {creativesOn && (
+          <Picker
+            label="Creative"
+            value={creativeName}
+            placeholder="—"
+            options={creativesForClient(creatives, clientId).map(c => ({ id: c.id, label: c.name }))}
+            onChange={(id, label) => pickCreative(Number(id), label)}
+          />
+        )}
         <Picker
           label="Division"
           value={division}
@@ -304,7 +343,7 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
                   <div className="text-[13px] text-ink truncate">{r.name}</div>
                   <div className="text-[11px] text-mute truncate flex items-center gap-1.5">
                     <span className="truncate">
-                      {[r.clientName, r.division, r.category].filter(Boolean).join(' · ') || '—'}
+                      {[r.clientName, r.creativeName, r.division, r.category].filter(Boolean).join(' · ') || '—'}
                     </span>
                     <LevelPill level={lvl} title={r.category ? `Lv ${lvl} in ${r.category}` : undefined} />
                   </div>

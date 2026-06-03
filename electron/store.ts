@@ -4,6 +4,8 @@ export type RecentEntry = {
   name: string;
   clientId?: number;
   clientName?: string;
+  creativeId?: number;
+  creativeName?: string;
   division?: string;
   category?: string;
   lastUsed: number;
@@ -16,6 +18,8 @@ export type RunningTimer = {
   name: string;
   clientId?: number;
   clientName?: string;
+  creativeId?: number;
+  creativeName?: string;
   division?: string;
   category?: string;
   pausedAt?: number;
@@ -43,6 +47,9 @@ type Schema = {
   userName?: string;
   userEmail?: string;
   accountSlug?: string;
+  // Disk-persisted Creatives board index — search stays instant on cold launch
+  // while a background refresh replaces it. See listCreatives in monday.ts.
+  creativesCache?: { at: number; data: Array<{ id: number; name: string; clientId?: number }> };
 };
 
 export const store = new Store<Schema>({

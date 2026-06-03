@@ -10,6 +10,8 @@ const api = {
   // Monday data
   openBoard: () => ipcRenderer.invoke('monday:openBoard'),
   listClients: () => ipcRenderer.invoke('monday:clients'),
+  listCreatives: () => ipcRenderer.invoke('monday:creatives'),
+  creativesEnabled: () => ipcRenderer.invoke('monday:creativesEnabled'),
   listTimeTrackerBoards: () => ipcRenderer.invoke('monday:listTimeTrackerBoards'),
   setBoard: (boardId: number, boardName?: string) =>
     ipcRenderer.invoke('monday:setBoard', boardId, boardName),
@@ -22,6 +24,7 @@ const api = {
     itemId: number;
     name: string;
     clientId?: number;
+    creativeId?: number;
     division: string;
     category: string;
     durationMinutes: number;

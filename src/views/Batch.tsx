@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { swan } from '../lib/swan';
 import { Picker } from '../components/Picker';
-import { CATEGORIES, DIVISIONS, Client } from '../lib/constants';
+import { CATEGORIES, DIVISIONS, Client, Creative } from '../lib/constants';
+import { clientForCreative, creativeMatchesClient, creativesForClient } from '../lib/creatives';
 import { minutesToHm } from '../lib/format';
 import { levelFor } from '../lib/levels';
 import { LevelPill } from '../components/LevelPill';
@@ -12,6 +13,8 @@ type Row = {
   name: string;
   clientId?: number;
   clientName?: string;
+  creativeId?: number;
+  creativeName?: string;
   division?: string;
   category?: string;
   durationMinutes: number;
@@ -52,6 +55,8 @@ function newRow(partial: Partial<Row> = {}): Row {
     name: partial.name || '',
     clientId: partial.clientId,
     clientName: partial.clientName,
+    creativeId: partial.creativeId,
+    creativeName: partial.creativeName,
     division: partial.division,
     category: partial.category,
     durationMinutes: partial.durationMinutes || 30,
@@ -67,6 +72,8 @@ export function Batch({ onClose }: Props) {
   const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
   const [rows, setRows] = useState<Row[]>([newRow()]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [creatives, setCreatives] = useState<Creative[]>([]);
+  const [creativesOn, setCreativesOn] = useState(false);
   const [todayLoggedMinutes, setTodayLoggedMinutes] = useState(0);
   const [levelsOn, setLevelsOn] = useState(true);
   const [categoryMinutes, setCategoryMinutes] = useState<Record<string, number>>({});
@@ -92,6 +99,11 @@ export function Batch({ onClose }: Props) {
 
   useEffect(() => {
     swan.listClients().then(setClients).catch(() => {});
+    swan.creativesEnabled().then((on: boolean) => {
+      if (!on) return;
+      setCreativesOn(true);
+      swan.listCreatives().then(setCreatives).catch(() => {});
+    }).catch(() => {});
     swan
       .aiStatus()
       .then(s => setAiState({ enabled: s.aiEnabled, hasKey: s.hasUserKey || s.hasSharedKey }));
@@ -149,6 +161,29 @@ export function Batch({ onClose }: Props) {
 
   function update(id: string, patch: Partial<Row>) {
     setRows(rs => rs.map(r => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
+  function pickRowClient(id: string, clientId: number, clientName: string) {
+    setRows(rs =>
+      rs.map(r => {
+        if (r.id !== id) return r;
+        const next = { ...r, clientId, clientName };
+        if (!creativeMatchesClient(creatives, r.creativeId, clientId)) {
+          next.creativeId = undefined;
+          next.creativeName = undefined;
+        }
+        return next;
+      })
+    );
+  }
+
+  function pickRowCreative(id: string, creativeId: number, creativeName: string) {
+    const owner = clientForCreative(creatives.find(c => c.id === creativeId), clients);
+    update(id, {
+      creativeId,
+      creativeName,
+      ...(owner ? { clientId: owner.id, clientName: owner.name } : {})
+    });
   }
 
   function addRow() {
@@ -211,6 +246,8 @@ export function Batch({ onClose }: Props) {
       durationMinutes: r.durationMinutes,
       clientId: r.clientId,
       clientName: r.clientName,
+      creativeId: r.creativeId,
+      creativeName: r.creativeName,
       division: r.division!,
       category: r.category!
     }));
@@ -314,10 +351,13 @@ export function Batch({ onClose }: Props) {
               : lowConfidence
               ? 'bg-yellow-500/[0.06]'
               : 'hover:bg-ink/[0.08]';
+          const gridCols = creativesOn
+            ? 'grid-cols-[88px_220px_180px_180px_180px_180px_80px_24px]'
+            : 'grid-cols-[88px_220px_180px_180px_180px_80px_24px]';
           return (
             <div
               key={r.id}
-              className={`grid grid-cols-[88px_220px_180px_180px_180px_80px_24px] w-max gap-2 items-center px-2 py-1.5 rounded-md ${tone}`}
+              className={`grid ${gridCols} w-max gap-2 items-center px-2 py-1.5 rounded-md ${tone}`}
             >
               <div
                 className="flex items-center justify-between bg-chip rounded h-[28px] px-1"
@@ -358,8 +398,17 @@ export function Batch({ onClose }: Props) {
                 value={r.clientName}
                 placeholder="—"
                 options={clients.map(c => ({ id: c.id, label: c.name }))}
-                onChange={(id, label) => update(r.id, { clientId: Number(id), clientName: label })}
+                onChange={(id, label) => pickRowClient(r.id, Number(id), label)}
               />
+              {creativesOn && (
+                <Picker
+                  label="Creative"
+                  value={r.creativeName}
+                  placeholder="—"
+                  options={creativesForClient(creatives, r.clientId).map(c => ({ id: c.id, label: c.name }))}
+                  onChange={(id, label) => pickRowCreative(r.id, Number(id), label)}
+                />
+              )}
               <Picker
                 label="Division"
                 value={r.division}
@@ -395,7 +444,7 @@ export function Batch({ onClose }: Props) {
                 ×
               </button>
               {r.status === 'error' && r.error && (
-                <div className="col-span-7 px-2 pt-0.5 pb-1 text-[10px] text-accent">{r.error}</div>
+                <div className={`${creativesOn ? 'col-span-8' : 'col-span-7'} px-2 pt-0.5 pb-1 text-[10px] text-accent`}>{r.error}</div>
               )}
             </div>
           );
