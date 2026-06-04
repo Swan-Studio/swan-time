@@ -52,6 +52,7 @@ import { shortlistCreatives, resolveCreativeByName, type CreativeRef } from './c
 
 const isDev = !app.isPackaged;
 let win: BrowserWindow | null = null;
+let quitting = false; // set in before-quit so the close→hide interception doesn't block app exit
 let tray: Tray | null = null;
 let tickInterval: NodeJS.Timeout | null = null;
 let nudgeTimeout: NodeJS.Timeout | null = null;
@@ -108,6 +109,21 @@ function createWindow() {
     if (win) lastBounds = win.getBounds();
     if (store.get('settings').closeOnBlur !== false) win?.hide();
   });
+
+  // ⌘W is live via Electron's default application menu even though LSUIElement
+  // hides the menu bar — and a closed window used to brick the tray ("Object
+  // has been destroyed" at the next toggle, crashed live 2026-06-04). This is
+  // a menubar app: close means hide; the window's lifetime is the app's.
+  win.on('close', e => {
+    if (quitting) return;
+    e.preventDefault();
+    win?.hide();
+  });
+  // Defense in depth: if the window is ever destroyed anyway, drop the stale
+  // reference so showWindow/toggleWindow recreate it instead of crashing.
+  win.on('closed', () => {
+    win = null;
+  });
 }
 
 // Anchor a window of the given size near the tray icon. Default below; flip
@@ -161,6 +177,8 @@ function positionNearTray() {
 }
 
 function showWindow() {
+  // Recreate on demand — a destroyed window must never brick the tray/hotkey.
+  if (!win || win.isDestroyed()) createWindow();
   if (!win) return;
   // Sticky-widget mode: restore exact last bounds. Popover mode: re-anchor to tray.
   const sticky = store.get('settings').closeOnBlur === false;
@@ -175,7 +193,10 @@ function showWindow() {
 }
 
 function toggleWindow() {
-  if (!win) return;
+  if (!win || win.isDestroyed()) {
+    showWindow(); // recreates the window
+    return;
+  }
   if (win.isVisible()) {
     win.hide();
   } else {
@@ -805,6 +826,10 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   // Keep app alive on macOS — it's a menubar app, no windows is normal.
+});
+
+app.on('before-quit', () => {
+  quitting = true; // let the close→hide interception stand down
 });
 
 app.on('will-quit', () => {
