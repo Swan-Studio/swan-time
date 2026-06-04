@@ -37,6 +37,12 @@ describe('buildDownloadUrl', () => {
       'https://github.com/o/r/releases/download/v1.0.0/a%20b.dmg'
     );
   });
+
+  it('encodes path separators in every segment', () => {
+    expect(buildDownloadUrl('o', 'r', '1.0.0/../evil', 'a.dmg')).toBe(
+      'https://github.com/o/r/releases/download/v1.0.0%2F..%2Fevil/a.dmg'
+    );
+  });
 });
 
 describe('sha512Of', () => {

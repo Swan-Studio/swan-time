@@ -13,7 +13,7 @@ export function pickDmgAsset(files: UpdateAsset[]): UpdateAsset | undefined {
 }
 
 export function buildDownloadUrl(owner: string, repo: string, version: string, fileName: string): string {
-  return `https://github.com/${owner}/${repo}/releases/download/v${version}/${encodeURIComponent(fileName)}`;
+  return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/download/v${encodeURIComponent(version)}/${encodeURIComponent(fileName)}`;
 }
 
 export function sha512Of(filePath: string): Promise<string> {
