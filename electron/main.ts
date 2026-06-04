@@ -1,5 +1,5 @@
-import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage, screen, dialog, shell } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage, screen, shell } from 'electron';
+import { setupUpdater, getUpdateState, installUpdate } from './updater';
 import path from 'node:path';
 import fs from 'node:fs';
 import { store, pushRecent, type RunningTimer } from './store';
@@ -196,7 +196,22 @@ function createTray() {
   tray.setToolTip(`Swan Time — ${SHORTCUT_HINT}`);
   tray.on('click', () => toggleWindow());
   tray.on('right-click', () => {
+    const update = getUpdateState();
+    const updateItems: Electron.MenuItemConstructorOptions[] =
+      update.phase === 'ready'
+        ? [
+            {
+              label:
+                process.platform === 'win32'
+                  ? `⬇ Restart to update — v${update.version}`
+                  : `⬇ Update available — v${update.version}`,
+              click: () => void installUpdate()
+            },
+            { type: 'separator' }
+          ]
+        : [];
     const menu = Menu.buildFromTemplate([
+      ...updateItems,
       { label: 'Show', click: () => showWindow() },
       {
         label: 'Batch entry…',
@@ -333,6 +348,10 @@ function mockStatsForName(name: string): {
 }
 
 function registerIpc() {
+  // Updates
+  ipcMain.handle('update:status', () => getUpdateState());
+  ipcMain.handle('update:install', () => installUpdate());
+
   // Auth
   ipcMain.handle('auth:status', async () => {
     const token = await getToken();
@@ -695,37 +714,15 @@ async function resolveUser() {
   return { authed: true, userId: Number(me.id), userName: me.name, boardId: board.id };
 }
 
-function setupAutoUpdater() {
-  if (isDev) return;
-  // No publish channel is configured (DMG distributed manually); skip the
-  // updater entirely so it doesn't spam ENOENT for the missing app-update.yml.
-  const updateConfig = path.join(process.resourcesPath, 'app-update.yml');
-  if (!fs.existsSync(updateConfig)) return;
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('error', err => console.warn('updater error:', err.message));
-  autoUpdater.on('update-downloaded', info => {
-    const choice = dialog.showMessageBoxSync({
-      type: 'info',
-      buttons: ['Restart now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'Swan Time update ready',
-      message: `Version ${info.version} downloaded.`,
-      detail: 'Restart to install. Your timer state will be preserved.'
-    });
-    if (choice === 0) autoUpdater.quitAndInstall();
-  });
-  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 10_000);
-  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
-}
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin') app.dock?.hide();
   createWindow();
   createTray();
   registerIpc();
-  setupAutoUpdater();
+  setupUpdater(version => {
+    win?.webContents.send('update:ready', version);
+  });
 
   // Migrate the legacy default hotkey if still in place.
   const settings = store.get('settings');
