@@ -83,9 +83,11 @@ async function handleUpdateAvailable(version: string, files: UpdateAsset[]) {
     state = { phase: 'ready', version, dmgPath: dest, fallbackUrl };
   } catch (err) {
     console.warn('updater download failed:', (err as Error).message);
-    fs.rmSync(dest, { force: true }); // never leave a partial/wrong-hash DMG mountable
     // Surface the update anyway; the install action opens the browser instead.
     state = { phase: 'ready', version, dmgPath: null, fallbackUrl };
+    try {
+      fs.rmSync(dest, { force: true }); // never leave a partial/wrong-hash DMG mountable
+    } catch { /* best-effort */ }
   }
   notifyReady?.(version);
 }
