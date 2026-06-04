@@ -41,8 +41,9 @@ StopGate gains a **Duration (minutes)** input above Division/Category:
   rounding as `logEntry`), ticking each second via the existing `onTimerTick`
   subscription; seeded on mount from the timer prop (accumulatedMs/startedAt math,
   handles a paused timer that emits no ticks).
-- First keystroke freezes it: the field shows exactly what the user typed and stops
-  tracking the live value (`dirty` flag).
+- Focus (or first keystroke) freezes it: the field stops tracking the live value
+  the moment the user clicks in, so it can never tick under the caret; from then
+  on it shows exactly what the user typed (`dirty` = non-null input string).
 - Validation: integer 1–1440. Invalid/empty → "Log entry" disabled.
 - Numeric input styled like the Today view's existing minutes editor.
 
