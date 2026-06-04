@@ -31,6 +31,7 @@ export default function App() {
   const [userName, setUserName] = useState<string | undefined>();
   const [boardWarning, setBoardWarning] = useState<string | null>(null);
   const [lastLog, setLastLog] = useState<{ minutes: number } | null>(null);
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   // Ghost-click shield: when the window appears or morphs between modes
   // (nudge banner ↔ compact widget), a click aimed at the previous layout can
   // land on whatever control now occupies that pixel — on Windows the nudge
@@ -108,6 +109,17 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    function showUpdateBanner(version: string) {
+      if (localStorage.getItem('updateBannerDismissed') === version) return;
+      setUpdateVersion(version);
+    }
+    swan.updateStatus().then((s: { phase: string; version?: string }) => {
+      if (s.phase === 'ready' && s.version) showUpdateBanner(s.version);
+    });
+    return swan.onUpdateReady(showUpdateBanner);
+  }, []);
+
   return (
     <div className="relative w-full h-screen bg-paper/80 backdrop-blur-xl rounded-xl overflow-hidden border border-line shadow-[0_10px_40px_rgba(8,8,34,0.18)]">
       {/* Swan signature: 3px gradient bar */}
@@ -115,6 +127,26 @@ export default function App() {
       {boardWarning && screen !== 'auth' && screen !== 'loading' && (
         <div className="absolute top-0 inset-x-0 px-4 py-1.5 bg-accent/10 text-accent text-[10px] z-50 text-center">
           {boardWarning}
+        </div>
+      )}
+      {updateVersion && screen !== 'loading' && screen !== 'nudge' && (
+        <div className="absolute bottom-0 inset-x-0 px-4 py-1.5 bg-accent/10 text-[10px] z-50 flex items-center justify-between">
+          <span className="text-accent">Update ready — v{updateVersion}</span>
+          <span className="flex items-center gap-2">
+            <button className="text-accent underline" onClick={() => swan.installUpdate()}>
+              Install
+            </button>
+            <button
+              className="text-mute"
+              aria-label="Dismiss update banner"
+              onClick={() => {
+                localStorage.setItem('updateBannerDismissed', updateVersion);
+                setUpdateVersion(null);
+              }}
+            >
+              ✕
+            </button>
+          </span>
         </div>
       )}
       {screen === 'loading' && (

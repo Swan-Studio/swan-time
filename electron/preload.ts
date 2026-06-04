@@ -64,6 +64,10 @@ const api = {
   hide: () => ipcRenderer.invoke('window:hide'),
   quit: () => ipcRenderer.invoke('app:quit'),
 
+  // Updates
+  updateStatus: () => ipcRenderer.invoke('update:status'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+
   // Events
   onTimerTick: (cb: (seconds: number) => void): (() => void) => {
     const handler = (_: unknown, s: number) => cb(s);
@@ -84,6 +88,13 @@ const api = {
     ipcRenderer.on('widget:mode', handler);
     return () => {
       ipcRenderer.off('widget:mode', handler);
+    };
+  },
+  onUpdateReady: (cb: (version: string) => void): (() => void) => {
+    const handler = (_: unknown, v: string) => cb(v);
+    ipcRenderer.on('update:ready', handler);
+    return () => {
+      ipcRenderer.off('update:ready', handler);
     };
   }
 };
