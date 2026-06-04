@@ -37,7 +37,7 @@ const api = {
   updateTimer: (patch: any) => ipcRenderer.invoke('timer:update', patch),
   pauseTimer: () => ipcRenderer.invoke('timer:pause'),
   resumeTimer: () => ipcRenderer.invoke('timer:resume'),
-  stopTimer: () => ipcRenderer.invoke('timer:stop'),
+  stopTimer: (overrideMinutes?: number) => ipcRenderer.invoke('timer:stop', overrideMinutes),
   cancelTimer: () => ipcRenderer.invoke('timer:cancel'),
 
   // Recents + settings

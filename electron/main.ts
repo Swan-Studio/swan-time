@@ -509,7 +509,7 @@ function registerIpc() {
     return store.get('running');
   });
 
-  ipcMain.handle('timer:stop', async () => {
+  ipcMain.handle('timer:stop', async (_event, overrideMinutes?: number) => {
     const cur = store.get('running');
     if (!cur) return { ok: false, error: 'No running timer' };
     if (!cur.division || !cur.category) return { ok: false, error: 'Need division + category' };
@@ -518,9 +518,15 @@ function registerIpc() {
     if (!boardId || !userId) return { ok: false, error: 'Not authenticated' };
 
     const endedAt = Date.now();
+    // User-edited duration from the StopGate. Defensive clamp — the renderer
+    // already disables Log for invalid input.
+    const override =
+      typeof overrideMinutes === 'number' && Number.isFinite(overrideMinutes)
+        ? Math.min(1440, Math.max(1, Math.round(overrideMinutes)))
+        : undefined;
     // Pass an effective startedAt so logEntry's (endedAt - startedAt) yields the
-    // tracked duration minus any paused time.
-    const effectiveMs = runningElapsedMs(cur);
+    // tracked duration minus any paused time — or the user's edited override.
+    const effectiveMs = override !== undefined ? override * 60_000 : runningElapsedMs(cur);
     let result;
     try {
       result = await logEntry({
