@@ -35,6 +35,8 @@ function client(): Anthropic | null {
 
 export type CategorySuggestion = {
   clientName?: string;
+  creativeId?: number;
+  creativeName?: string;
   division?: string;
   category?: string;
   confidence: number;
@@ -42,7 +44,11 @@ export type CategorySuggestion = {
 
 export async function suggestCategory(
   activityName: string,
-  context: { recents: Array<{ name: string; clientName?: string }>; clients: string[] }
+  context: {
+    recents: Array<{ name: string; clientName?: string }>;
+    clients: string[];
+    creativeCandidates?: string[];
+  }
 ): Promise<CategorySuggestion> {
   const c = client();
   if (!c || !activityName.trim()) return { confidence: 0 };
@@ -51,16 +57,20 @@ export async function suggestCategory(
     ? `\nAllowed clients (match exactly one, case-insensitive on input but return exact case, or null): ${context.clients.join(', ')}.`
     : '';
 
+  const creativesHint = context.creativeCandidates?.length
+    ? `\nCandidate creatives (pick exactly one the activity refers to, or null — only names from this list): ${context.creativeCandidates.join(', ')}.`
+    : '';
+
   // Confidence rubric matters: the UI hides suggestions at confidence <= 0.5,
   // and without an explicit rubric the model marks down otherwise-solid
   // division/category guesses just because the client is unknown — so the
   // strip never appeared (debugged live 2026-06-04: "working on the foodie
   // creative" → Production/Editing at 0.45, silently discarded).
   const sys = `You classify time-tracking activity names for a creative agency.
-Return strict JSON only, no prose: {"clientName": string|null, "division": string|null, "category": string|null, "confidence": 0..1}.
+Return strict JSON only, no prose: {"clientName": string|null, "creativeName": string|null, "division": string|null, "category": string|null, "confidence": 0..1}.
 Allowed divisions: ${DIVISIONS.join(', ')}.
-Allowed categories: ${CATEGORIES.join(', ')}.${clientsHint}
-Infer the client from the activity name or from similar recent activities. The client is OPTIONAL — returning null for clientName is normal and must NOT lower confidence.
+Allowed categories: ${CATEGORIES.join(', ')}.${clientsHint}${creativesHint}
+Infer the client from the activity name or from similar recent activities. The client and creative are OPTIONAL — returning null for clientName or creativeName is normal and must NOT lower confidence.
 confidence scores ONLY how likely your division and category are correct: 0.8+ when the activity clearly implies them, 0.5-0.7 when plausible, below 0.5 only when the name is too vague to classify at all.`;
 
   const recentLines = context.recents
@@ -89,8 +99,15 @@ ${recentLines || '(none)'}`;
     const clientMatch = typeof parsed.clientName === 'string'
       ? context.clients.find(c => c.toLowerCase() === parsed.clientName.toLowerCase())
       : undefined;
+    const creativeMatch =
+      typeof parsed.creativeName === 'string' && context.creativeCandidates
+        ? context.creativeCandidates.find(
+            n => n.toLowerCase() === parsed.creativeName.toLowerCase()
+          )
+        : undefined;
     return {
       clientName: clientMatch,
+      creativeName: creativeMatch,
       division: DIVISIONS.includes(parsed.division) ? parsed.division : undefined,
       category: CATEGORIES.includes(parsed.category) ? parsed.category : undefined,
       confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0))
@@ -106,6 +123,8 @@ export type ParsedBatchRow = {
   name: string;
   durationMinutes: number;
   clientName?: string;
+  creativeId?: number;
+  creativeName?: string;
   division?: string;
   category?: string;
   confidence: number;
@@ -113,7 +132,7 @@ export type ParsedBatchRow = {
 
 export async function parseBatch(
   text: string,
-  context: { clients: string[]; today: string; primaryDivision?: string }
+  context: { clients: string[]; today: string; primaryDivision?: string; creativeCandidates?: string[] }
 ): Promise<ParsedBatchRow[]> {
   const c = client();
   if (!c) throw new Error('AI is off or no API key configured.');
@@ -126,6 +145,10 @@ export async function parseBatch(
     ? `\n\nThis user's primary division is "${context.primaryDivision}". Default to this division unless the activity strongly indicates a different one (e.g. don't override if they say "shooting" → Production, but do default if context is ambiguous).`
     : '';
 
+  const creativesHint = context.creativeCandidates?.length
+    ? `\n\nCandidate creatives (a row may reference at most one; only use names from this list): ${context.creativeCandidates.join(', ')}`
+    : '';
+
   const sys = `You parse free-text time logs into structured entries for Swan Studio, a creative agency.${primaryHint}
 
 Return STRICT JSON: an array of objects with these fields:
@@ -133,11 +156,12 @@ Return STRICT JSON: an array of objects with these fields:
 - name: short activity description (no client name, no duration, no division/category)
 - durationMinutes: integer minutes (parse "2h"=120, "30m"=30, "9-11am"=120, "9:00-11:30"=150; min 1, round up)
 - clientName: must match exactly one of the allowed clients OR be omitted
+- creativeName: must match exactly one of the candidate creatives OR be omitted (optional — omitting must not lower confidence)
 - category: one of [${CATEGORIES.join(', ')}] OR omitted
 - division: one of [${DIVISIONS.join(', ')}] OR omitted — pick using the category→division mapping below
 - confidence: 0..1, lower if you guessed division/category from weak signal
 
-Allowed clients (match exactly, case-insensitive on input but return exact case): ${context.clients.join(', ')}
+Allowed clients (match exactly, case-insensitive on input but return exact case): ${context.clients.join(', ')}${creativesHint}
 
 Category → Division mapping (use this to pick division from category):
 - Content Delivery: Scripting, Editing, Revising Edit, Ideating Concepts, Research Deck Preparation, Editor & Creator Briefing, Reviewing, Creator Recruitment
@@ -196,11 +220,18 @@ Return ONLY the JSON array, no commentary, no code fences. If text has no parsea
       const clientMatch = typeof row.clientName === 'string'
         ? context.clients.find(c => c.toLowerCase() === row.clientName.toLowerCase())
         : undefined;
+      const creativeMatch =
+        typeof row.creativeName === 'string' && context.creativeCandidates
+          ? context.creativeCandidates.find(
+              n => n.toLowerCase() === row.creativeName.toLowerCase()
+            )
+          : undefined;
       return {
         date,
         name,
         durationMinutes,
         clientName: clientMatch,
+        creativeName: creativeMatch,
         division,
         category,
         confidence: Math.max(0, Math.min(1, Number(row.confidence) || 0))
