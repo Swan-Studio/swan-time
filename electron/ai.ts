@@ -51,12 +51,17 @@ export async function suggestCategory(
     ? `\nAllowed clients (match exactly one, case-insensitive on input but return exact case, or null): ${context.clients.join(', ')}.`
     : '';
 
+  // Confidence rubric matters: the UI hides suggestions at confidence <= 0.5,
+  // and without an explicit rubric the model marks down otherwise-solid
+  // division/category guesses just because the client is unknown — so the
+  // strip never appeared (debugged live 2026-06-04: "working on the foodie
+  // creative" → Production/Editing at 0.45, silently discarded).
   const sys = `You classify time-tracking activity names for a creative agency.
-Return strict JSON: {"clientName": string|null, "division": string|null, "category": string|null, "confidence": 0..1}.
+Return strict JSON only, no prose: {"clientName": string|null, "division": string|null, "category": string|null, "confidence": 0..1}.
 Allowed divisions: ${DIVISIONS.join(', ')}.
 Allowed categories: ${CATEGORIES.join(', ')}.${clientsHint}
-Infer the client from the activity name or from similar recent activities. If no client is clearly indicated, return null for clientName.
-If unsure, return null fields and low confidence.`;
+Infer the client from the activity name or from similar recent activities. The client is OPTIONAL — returning null for clientName is normal and must NOT lower confidence.
+confidence scores ONLY how likely your division and category are correct: 0.8+ when the activity clearly implies them, 0.5-0.7 when plausible, below 0.5 only when the name is too vague to classify at all.`;
 
   const recentLines = context.recents
     .slice(0, 5)
