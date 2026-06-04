@@ -61,12 +61,14 @@ Already done — the public repo lives at `Swan-Studio/swan-time`. (It must stay
 ```
 cd ~/swan-time
 npm version patch                # bumps 1.0.0 → 1.0.1
-GH_TOKEN=ghp_... npm run package -- --publish always
+GH_TOKEN=ghp_... npm run release
 ```
 
 This builds the `.dmg`, uploads to GitHub Releases, generates `latest-mac.yml` (which the auto-updater reads).
 
 The `GH_TOKEN` is a GitHub Personal Access Token with `repo` scope. Generate at github.com → Settings → Developer settings → PATs.
+
+> Note: `npm version patch` needs a clean working tree. If you have uncommitted local changes, use `npm version patch --no-git-tag-version`, commit package.json + package-lock.json, and tag manually (`git tag vX.Y.Z`).
 
 ### 5. Host the landing page  *(5 min)*
 
@@ -90,7 +92,7 @@ When you ship a new version:
 
 ```
 npm version patch  # or minor/major
-GH_TOKEN=... npm run package -- --publish always
+GH_TOKEN=... npm run release
 ```
 
 Every running copy of Swan Time auto-detects the update within 4 hours, downloads it in the background, and prompts the user to restart.
