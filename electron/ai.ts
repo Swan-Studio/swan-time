@@ -35,7 +35,7 @@ function client(): Anthropic | null {
 
 export type CategorySuggestion = {
   clientName?: string;
-  creativeId?: number;
+  creativeId?: number; // resolved in main.ts via resolveCreativeByName — ai.ts only sees names
   creativeName?: string;
   division?: string;
   category?: string;
@@ -123,7 +123,7 @@ export type ParsedBatchRow = {
   name: string;
   durationMinutes: number;
   clientName?: string;
-  creativeId?: number;
+  creativeId?: number; // resolved in main.ts via resolveCreativeByName — ai.ts only sees names
   creativeName?: string;
   division?: string;
   category?: string;
