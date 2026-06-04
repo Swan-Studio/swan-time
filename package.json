@@ -64,6 +64,12 @@
           "arch": [
             "universal"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "artifactName": "Swan-Time-${version}-${arch}.${ext}",
@@ -112,6 +118,10 @@
         }
       ]
     },
-    "publish": null
+    "publish": {
+      "provider": "github",
+      "owner": "Swan-Studio",
+      "repo": "swan-time"
+    }
   }
 }
