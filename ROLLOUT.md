@@ -7,7 +7,8 @@ Single-page checklist for Dean. Everything else is automated. Stop at any step �
 ## ✅ Already done in code
 
 - [x] App builds to a `.dmg` via `npm run package`
-- [x] Auto-update plumbing (`electron-updater`) — checks GitHub Releases every 4 hours and prompts user to restart
+- [x] Update notify + auto-download — checks GitHub Releases every 4 hours, downloads the DMG in the background, and shows a gentle tray item + in-app banner (no forced dialogs). Windows builds true-autoupdate.
+- [x] GitHub repo created: https://github.com/Swan-Studio/swan-time (public — history scanned clean of secrets 2026-06-04)
 - [x] Board picker fallback — when the firstName regex misses, user picks from a list once
 - [x] AI shared key (`.env.local` → bundled into builds via `electron/sharedKey.ts`)
 - [x] Landing page template (`landing/index.html`) — drop into Vercel/Cloudflare/Netlify as-is
@@ -53,9 +54,7 @@ Without this, employees see "macOS can't verify the developer" on first launch a
 
 ### 3. Set up the GitHub repo  *(10 min)*
 
-1. Create **private** repo at `github.com/swan-studio/swan-time` (or whatever org)
-2. Push the code: `cd ~/swan-time && git init && git add . && git commit -m "initial" && git remote add origin git@github.com:swan-studio/swan-time.git && git push -u origin main`
-3. If your org/repo name differs, update `package.json` → `"build" → "publish" → "owner"` and `"repo"`
+Already done — the public repo lives at `Swan-Studio/swan-time`. (It must stay public: the in-app update check and DMG downloads are anonymous.) If you clone fresh, the remote is `git@github.com:Swan-Studio/swan-time.git`.
 
 ### 4. Cut your first release  *(5 min)*
 
@@ -79,7 +78,7 @@ The `landing/` folder has a static HTML page ready to deploy.
 
 After deploy, edit `landing/index.html` → bottom `<script>` → set `DOWNLOAD_URL` to:
 ```
-https://github.com/swan-studio/swan-time/releases/latest/download/Swan-Time-1.0.0-universal.dmg
+https://github.com/Swan-Studio/swan-time/releases/latest/download/Swan-Time-1.0.0-universal.dmg
 ```
 (replace `1.0.0` with your published version, or use the GitHub `/releases/latest` redirect).
 
@@ -115,4 +114,4 @@ Every running copy of Swan Time auto-detects the update within 4 hours, download
 - **"App is damaged"** on first launch: the user is on macOS 13+ with a build that wasn't notarized. Right-click → Open works. Permanent fix: complete step 2 above.
 - **Sign-in spinner hangs**: probably no `MONDAY_CLIENT_ID` baked in. Check the running build has it, or fall back to "Use a personal API token" in the Auth screen.
 - **AI button greyed out in Batch**: AI off in Settings, or no key. The button itself tells you which.
-- **No update detected**: confirm `package.json` version was actually bumped (`npm version patch`), and `latest-mac.yml` exists in the GitHub Release.
+- **No update detected**: confirm `npm version patch` was actually bumped and `latest-mac.yml` exists in the GitHub Release. The in-app reminder appears within 4 hours — or relaunch the app to trigger a check within 10 seconds.
