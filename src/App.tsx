@@ -196,7 +196,7 @@ export default function App() {
             if (result?.minutes) setLastLog({ minutes: result.minutes });
             setScreen('tracker');
           }}
-          onNeedsCategory={() => setScreen('stopgate')}
+          onConfirmStop={() => setScreen('stopgate')}
         />
       )}
       {screen === 'stopgate' && timer && (

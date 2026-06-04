@@ -6,15 +6,13 @@ import type { Running as RunningT } from '../lib/constants';
 
 type Props = {
   timer: NonNullable<RunningT>;
-  onStopped: (result?: { minutes: number }) => void;
-  onNeedsCategory: () => void;
+  onStopped: (result?: { minutes: number }) => void; // still used by discard()
+  onConfirmStop: () => void;
 };
 
-export function Running({ timer, onStopped, onNeedsCategory }: Props) {
+export function Running({ timer, onStopped, onConfirmStop }: Props) {
   const [seconds, setSeconds] = useState(() => initialSeconds(timer));
   const [paused, setPaused] = useState(!!timer.pausedAt);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -29,25 +27,10 @@ export function Running({ timer, onStopped, onNeedsCategory }: Props) {
     };
   }, []);
 
-  async function stop() {
-    if (!timer.division || !timer.category) {
-      onNeedsCategory();
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await swan.stopTimer();
-      if (!res.ok) {
-        setError(res.error || 'Failed to log entry');
-        return;
-      }
-      onStopped(res.minutes ? { minutes: res.minutes } : undefined);
-    } catch (e: any) {
-      setError(e?.message || String(e) || 'Failed to log entry');
-    } finally {
-      setBusy(false);
-    }
+  function stop() {
+    // All stops confirm on the StopGate — duration, division, and category are
+    // edited there before anything posts.
+    onConfirmStop();
   }
 
   async function togglePause() {
@@ -90,8 +73,7 @@ export function Running({ timer, onStopped, onNeedsCategory }: Props) {
         </div>
         <button
           onClick={togglePause}
-          disabled={busy}
-          className="no-drag text-mute hover:text-ink transition-colors disabled:opacity-40"
+          className="no-drag text-mute hover:text-ink transition-colors"
           title={paused ? 'Resume' : 'Pause'}
           aria-label={paused ? 'Resume timer' : 'Pause timer'}
         >
@@ -127,10 +109,6 @@ export function Running({ timer, onStopped, onNeedsCategory }: Props) {
         )}
       </div>
 
-      {error && (
-        <div className="text-[12px] text-accent text-center mb-2 no-drag">{error}</div>
-      )}
-
       <div className="grid grid-cols-2 gap-2 no-drag">
         <button
           onClick={() => swan.hide()}
@@ -140,17 +118,15 @@ export function Running({ timer, onStopped, onNeedsCategory }: Props) {
         </button>
         <button
           onClick={stop}
-          disabled={busy}
-          className="py-2.5 bg-ink text-paper rounded-md text-[13px] font-medium hover:bg-ink/90 disabled:opacity-50 transition-colors"
+          className="py-2.5 bg-ink text-paper rounded-md text-[13px] font-medium hover:bg-ink/90 transition-colors"
         >
-          {busy ? 'Logging…' : 'Stop & log'}
+          Stop & log
         </button>
       </div>
 
       <button
         onClick={discard}
-        disabled={busy}
-        className={`mt-2 mx-auto text-[11px] no-drag transition-colors disabled:opacity-50 ${
+        className={`mt-2 mx-auto text-[11px] no-drag transition-colors ${
           confirmDiscard
             ? 'text-accent font-medium'
             : 'text-mute hover:text-ink'
