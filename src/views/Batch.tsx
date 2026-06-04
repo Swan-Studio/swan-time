@@ -141,6 +141,8 @@ export function Batch({ onClose }: Props) {
           name: p.name,
           clientId: c.id,
           clientName: c.name,
+          creativeId: p.creativeId,
+          creativeName: p.creativeName,
           division: p.division,
           category: p.category,
           durationMinutes: p.durationMinutes,

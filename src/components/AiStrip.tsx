@@ -1,5 +1,6 @@
 type Props = {
   clientName?: string;
+  creativeName?: string;
   division?: string;
   category?: string;
   confidence: number;
@@ -7,10 +8,11 @@ type Props = {
   onDismiss: () => void;
 };
 
-export function AiStrip({ clientName, division, category, confidence, onAccept, onDismiss }: Props) {
-  if (confidence <= 0.5 || (!clientName && !division && !category)) return null;
+export function AiStrip({ clientName, creativeName, division, category, confidence, onAccept, onDismiss }: Props) {
+  if (confidence <= 0.5 || (!clientName && !creativeName && !division && !category)) return null;
   const parts = [
     clientName && <span key="client">{clientName}</span>,
+    creativeName && <span key="creative">{creativeName}</span>,
     division && <span key="division" className="text-mute">{division}</span>,
     category && <span key="category">{category}</span>
   ].filter(Boolean);

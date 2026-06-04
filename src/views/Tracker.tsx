@@ -39,6 +39,8 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
   const [categoryMinutes, setCategoryMinutes] = useState<Record<string, number>>({});
   const [suggestion, setSuggestion] = useState<{
     clientName?: string;
+    creativeId?: number;
+    creativeName?: string;
     division?: string;
     category?: string;
     confidence: number;
@@ -275,12 +277,14 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
       <AiStrip
         {...suggestion}
         onAccept={() => {
-          if (suggestion.clientName) {
+          if (suggestion.creativeId && suggestion.creativeName) {
+            // Creative wins: pickCreative also fills its owning client, the
+            // same rule as picking manually — overriding the AI's client
+            // guess if they conflict.
+            pickCreative(suggestion.creativeId, suggestion.creativeName);
+          } else if (suggestion.clientName) {
             const match = clients.find(c => c.name.toLowerCase() === suggestion.clientName!.toLowerCase());
-            if (match) {
-              setClientId(match.id);
-              setClientName(match.name);
-            }
+            if (match) pickClient(match.id, match.name);
           }
           if (suggestion.division) setDivision(suggestion.division);
           if (suggestion.category) setCategory(suggestion.category);
