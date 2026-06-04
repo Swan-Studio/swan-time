@@ -370,15 +370,22 @@ export async function listClients(force = false): Promise<ClientList> {
   }
   if (clientsInflight) return clientsInflight;
   clientsInflight = (async () => {
-    const data = await gql<{ boards: Array<{ items_page: { items: Array<{ id: string; name: string }> } }> }>(
+    const data = await gql<{ boards: Array<{ groups: Array<{ title: string; items_page: { items: Array<{ id: string; name: string }> } }> }> }>(
       `query ($ids: [ID!]) {
         boards(ids: $ids) {
-          items_page(limit: 200) { items { id name } }
+          groups {
+            title
+            items_page(limit: 200) { items { id name } }
+          }
         }
       }`,
       { ids: [String(CLIENTS_BOARD_ID)] }
     );
-    const items = data.boards[0]?.items_page.items ?? [];
+    const groups = data.boards[0]?.groups ?? [];
+    // Only "Current" clients belong in the picker; fall back to every group
+    // rather than an empty list if the group is ever renamed.
+    const current = groups.find(g => g.title === 'Current');
+    const items = current ? current.items_page.items : groups.flatMap(g => g.items_page.items);
     const list = items
       .map(i => ({ id: Number(i.id), name: i.name }))
       .sort((a, b) => a.name.localeCompare(b.name));
