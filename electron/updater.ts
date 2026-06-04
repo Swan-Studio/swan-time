@@ -56,7 +56,7 @@ async function downloadTo(url: string, dest: string): Promise<void> {
 async function handleUpdateAvailable(version: string, files: UpdateAsset[]) {
   // Already downloading or holding this version — nothing to do. A NEWER
   // version mid-state falls through and restarts the download.
-  if (state.phase !== 'idle' && (state as { version: string }).version === version) return;
+  if (state.phase !== 'idle' && state.version === version) return;
 
   const fallbackUrl = `https://github.com/${OWNER}/${REPO}/releases/latest`;
   const asset = pickDmgAsset(files);
