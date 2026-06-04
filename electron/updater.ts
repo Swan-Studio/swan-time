@@ -48,15 +48,19 @@ async function downloadTo(url: string, dest: string): Promise<void> {
   const res = await net.fetch(url);
   if (!res.ok || !res.body) throw new Error(`download failed: HTTP ${res.status}`);
   await pipeline(
+    // Electron's net.fetch returns a DOM-typed ReadableStream; Node's fromWeb
+    // wants the node:stream/web type — same object at runtime, hence the cast.
     Readable.fromWeb(res.body as unknown as import('node:stream/web').ReadableStream),
     fs.createWriteStream(dest)
   );
 }
 
 async function handleUpdateAvailable(version: string, files: UpdateAsset[]) {
-  // Already downloading or holding this version — nothing to do. A NEWER
-  // version mid-state falls through and restarts the download.
-  if (state.phase !== 'idle' && state.version === version) return;
+  // Mid-download: don't restart — the next 4h check re-fires update-available
+  // and a newer version wins once the current download has settled.
+  if (state.phase === 'downloading') return;
+  // Already holding this version — nothing to do.
+  if (state.phase === 'ready' && state.version === version) return;
 
   const fallbackUrl = `https://github.com/${OWNER}/${REPO}/releases/latest`;
   const asset = pickDmgAsset(files);
@@ -68,7 +72,7 @@ async function handleUpdateAvailable(version: string, files: UpdateAsset[]) {
   }
 
   state = { phase: 'downloading', version };
-  const dest = path.join(updatesDir(), asset.url);
+  const dest = path.join(updatesDir(), path.basename(asset.url)); // feed is trusted, but never let a filename traverse out
   try {
     cleanUpdatesDir(); // drop any older pending download
     fs.mkdirSync(updatesDir(), { recursive: true });
@@ -79,6 +83,7 @@ async function handleUpdateAvailable(version: string, files: UpdateAsset[]) {
     state = { phase: 'ready', version, dmgPath: dest, fallbackUrl };
   } catch (err) {
     console.warn('updater download failed:', (err as Error).message);
+    fs.rmSync(dest, { force: true }); // never leave a partial/wrong-hash DMG mountable
     // Surface the update anyway; the install action opens the browser instead.
     state = { phase: 'ready', version, dmgPath: null, fallbackUrl };
   }
@@ -86,18 +91,22 @@ async function handleUpdateAvailable(version: string, files: UpdateAsset[]) {
 }
 
 export async function installUpdate(): Promise<void> {
-  if (state.phase !== 'ready') return;
-  if (process.platform === 'win32') {
-    autoUpdater.quitAndInstall();
-    return;
-  }
-  if (state.dmgPath && fs.existsSync(state.dmgPath)) {
-    await shell.openPath(state.dmgPath); // mounts the DMG
-    // Give Finder a beat to mount, then quit so the bundle can be replaced.
-    // Timer state is persisted in electron-store, so quitting is safe.
-    setTimeout(() => app.quit(), 1000);
-  } else {
-    await shell.openExternal(state.fallbackUrl);
+  try {
+    if (state.phase !== 'ready') return;
+    if (process.platform === 'win32') {
+      autoUpdater.quitAndInstall();
+      return;
+    }
+    if (state.dmgPath && fs.existsSync(state.dmgPath)) {
+      await shell.openPath(state.dmgPath); // mounts the DMG
+      // Give Finder a beat to mount, then quit so the bundle can be replaced.
+      // Timer state is persisted in electron-store, so quitting is safe.
+      setTimeout(() => app.quit(), 1000);
+    } else {
+      await shell.openExternal(state.fallbackUrl);
+    }
+  } catch (err) {
+    console.warn('updater install failed:', (err as Error).message);
   }
 }
 
@@ -133,6 +142,10 @@ export function setupUpdater(onReady: (version: string) => void): void {
     });
   }
 
-  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), FIRST_CHECK_DELAY_MS);
-  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), CHECK_INTERVAL_MS);
+  const firstCheck = setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), FIRST_CHECK_DELAY_MS);
+  const recheck = setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), CHECK_INTERVAL_MS);
+  app.on('will-quit', () => {
+    clearTimeout(firstCheck);
+    clearInterval(recheck);
+  });
 }
