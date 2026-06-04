@@ -48,6 +48,7 @@ import {
   clearEntriesCache
 } from './monday';
 import { suggestCategory, dailySummary, aiStatus, parseBatch } from './ai';
+import { shortlistCreatives, resolveCreativeByName, type CreativeRef } from './creativeMatch';
 
 const isDev = !app.isPackaged;
 let win: BrowserWindow | null = null;
@@ -347,6 +348,18 @@ function mockStatsForName(name: string): {
   return { streak, categoryMinutes };
 }
 
+// Creative candidates for AI suggestion — best-effort: any failure (no board,
+// no creative column, cache miss) just means no creative gets suggested.
+async function creativeCandidateRefs(): Promise<CreativeRef[]> {
+  try {
+    const boardId = store.get('boardId');
+    if (!boardId || !(await getBoardCols(boardId)).creative) return [];
+    return await listCreatives();
+  } catch {
+    return [];
+  }
+}
+
 function registerIpc() {
   // Updates
   ipcMain.handle('update:status', () => getUpdateState());
@@ -580,7 +593,16 @@ function registerIpc() {
   ipcMain.handle('ai:suggest', async (_e, name: string) => {
     const recents = store.get('recents').map(r => ({ name: r.name, clientName: r.clientName }));
     const clients = await listClients();
-    return suggestCategory(name, { recents, clients: clients.map(c => c.name) });
+    const candidates = shortlistCreatives(name, await creativeCandidateRefs());
+    const suggestion = await suggestCategory(name, {
+      recents,
+      clients: clients.map(c => c.name),
+      creativeCandidates: candidates.map(c => c.name)
+    });
+    // Attach the id for the renderer; an unknown/hallucinated name resolves
+    // to undefined and the suggestion degrades to client/division/category.
+    const resolved = resolveCreativeByName(suggestion.creativeName, candidates);
+    return { ...suggestion, creativeName: resolved?.creativeName, creativeId: resolved?.creativeId };
   });
   ipcMain.handle('ai:summary', async () => {
     const boardId = store.get('boardId');
@@ -614,7 +636,25 @@ function registerIpc() {
     const now = new Date();
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const primaryDivision = store.get('settings').primaryDivision;
-    return parseBatch(text, { clients: clients.map(c => c.name), today, primaryDivision });
+    const candidates = shortlistCreatives(text, await creativeCandidateRefs(), { cap: 25 });
+    const rows = await parseBatch(text, {
+      clients: clients.map(c => c.name),
+      today,
+      primaryDivision,
+      creativeCandidates: candidates.map(c => c.name)
+    });
+    // Attach ids; drop a creative that contradicts the row's matched client —
+    // the client↔creative consistency rule the pickers enforce manually.
+    return rows.map(row => {
+      const resolved = resolveCreativeByName(row.creativeName, candidates);
+      if (!resolved) return { ...row, creativeName: undefined };
+      const ref = candidates.find(c => c.id === resolved.creativeId);
+      const ownerName = ref?.clientId ? clients.find(c => c.id === ref.clientId)?.name : undefined;
+      const clientOk = !row.clientName || !ownerName || ownerName === row.clientName;
+      return clientOk
+        ? { ...row, creativeName: resolved.creativeName, creativeId: resolved.creativeId }
+        : { ...row, creativeName: undefined };
+    });
   });
 
   ipcMain.handle('batch:post', async (_e, rows: Array<{
