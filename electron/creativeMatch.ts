@@ -12,6 +12,8 @@ function tokens(s: string): Set<string> {
   return new Set(
     s
       .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '') // strip diacritics: Café → cafe
       .split(/[^a-z0-9]+/)
       .filter(t => t.length >= 3 && !STOPWORDS.has(t))
   );
@@ -45,6 +47,8 @@ export function resolveCreativeByName(
 ): { creativeId: number; creativeName: string } | undefined {
   if (typeof name !== 'string' || !name.trim()) return undefined;
   const needle = name.trim().toLowerCase();
+  // Duplicate names across clients: first match wins — acceptable for a
+  // best-effort suggestion the user can always change.
   const m = creatives.find(c => c.name.toLowerCase() === needle);
   return m ? { creativeId: m.id, creativeName: m.name } : undefined;
 }

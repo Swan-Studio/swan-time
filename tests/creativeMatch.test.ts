@@ -46,6 +46,16 @@ describe('shortlistCreatives', () => {
   it('returns [] for empty text with no client', () => {
     expect(shortlistCreatives('', CREATIVES)).toEqual([]);
   });
+
+  it('matches accented names against ASCII input', () => {
+    const out = shortlistCreatives('cafe shoot prep', [{ id: 9, name: 'Café Crawl' }]);
+    expect(out.map(c => c.id)).toEqual([9]);
+  });
+
+  it('returns the client\'s creatives for empty text when clientId is set', () => {
+    const out = shortlistCreatives('', CREATIVES, { clientId: 12 });
+    expect(out.map(c => c.id).sort()).toEqual([3, 4]);
+  });
 });
 
 describe('resolveCreativeByName', () => {
