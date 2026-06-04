@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { swan } from '../lib/swan';
 import { Picker } from '../components/Picker';
 import { CATEGORIES, DIVISIONS } from '../lib/constants';
+import { initialSeconds } from '../lib/elapsed';
 import type { Running } from '../lib/constants';
 
 type Props = {
@@ -10,22 +11,39 @@ type Props = {
   onCancel: () => void;
 };
 
+const MAX_MINUTES = 1440;
+
 export function StopGate({ timer, onLogged, onCancel }: Props) {
   const [division, setDivision] = useState(timer.division);
   const [category, setCategory] = useState(timer.category);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
+  // Live elapsed seconds keep the Duration prefill ticking until the user
+  // touches it. Seeded from the timer prop so a paused timer (which emits no
+  // ticks) still shows the right value.
+  const [seconds, setSeconds] = useState(() => initialSeconds(timer));
+  // null = untouched (live prefill). A string = the user's input, verbatim.
+  const [durationText, setDurationText] = useState<string | null>(null);
 
   useEffect(() => {
     swan.getSettings().then(s => setPrimaryDivision(s.primaryDivision));
   }, []);
 
+  useEffect(() => {
+    const off = swan.onTimerTick(setSeconds);
+    return () => off();
+  }, []);
+
+  const liveMinutes = Math.max(1, Math.ceil(seconds / 60)); // same rounding as logEntry
+  const minutes = durationText === null ? liveMinutes : Number(durationText);
+  const minutesValid = Number.isInteger(minutes) && minutes >= 1 && minutes <= MAX_MINUTES;
+
   async function log() {
-    if (!division || !category) return;
+    if (!division || !category || !minutesValid) return;
     setBusy(true);
     await swan.updateTimer({ division, category });
-    const res = await swan.stopTimer();
+    const res = await swan.stopTimer(durationText === null ? undefined : minutes);
     setBusy(false);
     if (!res.ok) {
       setError(res.error || 'Failed to log');
@@ -49,10 +67,29 @@ export function StopGate({ timer, onLogged, onCancel }: Props) {
       </div>
 
       <p className="text-[12px] text-mute leading-relaxed mb-4">
-        Pick a division and category before this can be logged. Your timer is still running.
+        Check the time and details — your timer keeps running until you log.
       </p>
 
       <div className="space-y-2 no-drag">
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="stopgate-minutes"
+            className="text-[11px] text-mute uppercase tracking-[0.08em] font-medium"
+          >
+            Minutes
+          </label>
+          <input
+            id="stopgate-minutes"
+            type="number"
+            min={1}
+            max={MAX_MINUTES}
+            value={durationText ?? String(liveMinutes)}
+            onChange={ev => setDurationText(ev.target.value)}
+            className={`w-20 px-2 py-1 bg-paper border rounded text-[12px] tabular text-right focus:outline-none focus:ring-1 focus:ring-ink/15 ${
+              minutesValid ? 'border-line' : 'border-accent'
+            }`}
+          />
+        </div>
         <Picker
           label="Division"
           value={division}
@@ -79,7 +116,7 @@ export function StopGate({ timer, onLogged, onCancel }: Props) {
         </button>
         <button
           onClick={log}
-          disabled={!division || !category || busy}
+          disabled={!division || !category || !minutesValid || busy}
           className="py-2.5 bg-ink text-paper rounded-md text-[13px] font-medium hover:bg-ink/90 disabled:opacity-30 transition-colors"
         >
           {busy ? 'Logging…' : 'Log entry'}
