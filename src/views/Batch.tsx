@@ -136,11 +136,16 @@ export function Batch({ onClose }: Props) {
       const parsed = await swan.batchParse(text);
       const mapped: Row[] = parsed.map((p: any) => {
         const c = findClient(p.clientName);
+        // AI-matched creative with no client: back-fill the creative's owner,
+        // mirroring pickRowCreative's manual rule.
+        const owner = p.creativeId && !c.id
+          ? clientForCreative(creatives.find(cr => cr.id === p.creativeId), clients)
+          : undefined;
         return newRow({
           date: p.date,
           name: p.name,
-          clientId: c.id,
-          clientName: c.name,
+          clientId: c.id ?? owner?.id,
+          clientName: c.name ?? owner?.name,
           creativeId: p.creativeId,
           creativeName: p.creativeName,
           division: p.division,
