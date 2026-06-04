@@ -116,12 +116,14 @@ export default function App() {
     }
     swan.updateStatus().then((s: { phase: string; version?: string }) => {
       if (s.phase === 'ready' && s.version) showUpdateBanner(s.version);
-    });
+    }).catch(() => {});
     return swan.onUpdateReady(showUpdateBanner);
   }, []);
 
+  const updateBannerVisible = !!updateVersion && screen !== 'loading' && screen !== 'nudge';
+
   return (
-    <div className="relative w-full h-screen bg-paper/80 backdrop-blur-xl rounded-xl overflow-hidden border border-line shadow-[0_10px_40px_rgba(8,8,34,0.18)]">
+    <div className={`relative w-full h-screen bg-paper/80 backdrop-blur-xl rounded-xl overflow-hidden border border-line shadow-[0_10px_40px_rgba(8,8,34,0.18)]${updateBannerVisible ? ' pb-7' : ''}`}>
       {/* Swan signature: 3px gradient bar */}
       <div className="absolute top-0 inset-x-0 h-[3px] bg-swan-gradient z-10" />
       {boardWarning && screen !== 'auth' && screen !== 'loading' && (
@@ -129,15 +131,15 @@ export default function App() {
           {boardWarning}
         </div>
       )}
-      {updateVersion && screen !== 'loading' && screen !== 'nudge' && (
-        <div className="absolute bottom-0 inset-x-0 px-4 py-1.5 bg-accent/10 text-[10px] z-50 flex items-center justify-between">
+      {updateBannerVisible && updateVersion && (
+        <div className="absolute bottom-0 inset-x-0 h-7 px-4 bg-accent/10 text-[10px] z-50 flex items-center justify-between">
           <span className="text-accent">Update ready — v{updateVersion}</span>
           <span className="flex items-center gap-2">
             <button className="text-accent underline" onClick={() => swan.installUpdate()}>
               Install
             </button>
             <button
-              className="text-mute"
+              className="text-mute px-1"
               aria-label="Dismiss update banner"
               onClick={() => {
                 localStorage.setItem('updateBannerDismissed', updateVersion);
