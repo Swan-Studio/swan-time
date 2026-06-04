@@ -35,7 +35,9 @@ export function StopGate({ timer, onLogged, onCancel }: Props) {
     return () => off();
   }, []);
 
-  const liveMinutes = Math.max(1, Math.ceil(seconds / 60)); // same rounding as logEntry
+  // Prefill only — the untouched case sends no override, so main's own
+  // ms-precision rounding (logEntry) stays authoritative for what gets logged.
+  const liveMinutes = Math.max(1, Math.ceil(seconds / 60));
   const minutes = durationText === null ? liveMinutes : Number(durationText);
   const minutesValid = Number.isInteger(minutes) && minutes >= 1 && minutes <= MAX_MINUTES;
 
@@ -84,6 +86,7 @@ export function StopGate({ timer, onLogged, onCancel }: Props) {
             min={1}
             max={MAX_MINUTES}
             value={durationText ?? String(liveMinutes)}
+            onFocus={() => setDurationText(t => t ?? String(liveMinutes))}
             onChange={ev => setDurationText(ev.target.value)}
             className={`w-20 px-2 py-1 bg-paper border rounded text-[12px] tabular text-right focus:outline-none focus:ring-1 focus:ring-ink/15 ${
               minutesValid ? 'border-line' : 'border-accent'
