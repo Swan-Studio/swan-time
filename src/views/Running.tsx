@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { swan } from '../lib/swan';
 import { formatElapsed } from '../lib/format';
+import { initialSeconds } from '../lib/elapsed';
 import type { Running as RunningT } from '../lib/constants';
 
 type Props = {
@@ -8,12 +9,6 @@ type Props = {
   onStopped: (result?: { minutes: number }) => void;
   onNeedsCategory: () => void;
 };
-
-function initialSeconds(t: NonNullable<RunningT>): number {
-  const acc = t.accumulatedMs ?? 0;
-  const ms = t.pausedAt ? acc : acc + (Date.now() - t.startedAt);
-  return Math.floor(ms / 1000);
-}
 
 export function Running({ timer, onStopped, onNeedsCategory }: Props) {
   const [seconds, setSeconds] = useState(() => initialSeconds(timer));
