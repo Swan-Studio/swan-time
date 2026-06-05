@@ -10,7 +10,8 @@ describe('targetBoundsFor', () => {
     expect(b.width).toBe(COMPACT_SIZE.width);
     expect(b.height).toBe(COMPACT_SIZE.height);
     expect(b.x).toBe(Math.round(TRAY.x + TRAY.width / 2 - COMPACT_SIZE.width / 2));
-    expect(b.y).toBe(TRAY.y + TRAY.height + 6);
+    // rawY (tray bottom + 6 = 30) clamps to the work-area top margin (25 + 8).
+    expect(b.y).toBe(Math.max(TRAY.y + TRAY.height + 6, WORK.y + 8));
   });
 
   it('anchors nudge at nudge size near the tray', () => {
