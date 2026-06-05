@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shortlistCreatives, resolveCreativeByName } from '../electron/creativeMatch';
+import { shortlistCreatives, resolveCreativeByName, validateCandidateNames } from '../electron/creativeMatch';
 
 const CREATIVES = [
   { id: 1, name: 'The Supplement Scam', clientId: 10 },
@@ -88,6 +88,27 @@ describe('fuzzy matching', () => {
   it('stemming does not strip double-s: "boss" stays "boss"', () => {
     const out = shortlistCreatives('bos check', [{ id: 26, name: 'Boss Moves', clientId: 1 }]);
     expect(out).toEqual([]); // "bos" (3 chars) gets filtered by min length anyway; no stem collision
+  });
+});
+
+describe('validateCandidateNames', () => {
+  const ALLOWED = ['New Foodies', "Foodie's life hack", 'Spring Sale'];
+
+  it('maps case-insensitively to exact-case allowed names', () => {
+    expect(validateCandidateNames(['new foodies', "FOODIE'S LIFE HACK"], ALLOWED))
+      .toEqual(['New Foodies', "Foodie's life hack"]);
+  });
+
+  it('drops hallucinated names, non-strings, and duplicates; caps at 3', () => {
+    expect(validateCandidateNames(
+      ['New Foodies', 'Nope', 42, 'new foodies', 'Spring Sale', "Foodie's life hack", 'Spring Sale'],
+      ALLOWED
+    )).toEqual(['New Foodies', 'Spring Sale', "Foodie's life hack"]);
+  });
+
+  it('returns [] for non-array input', () => {
+    expect(validateCandidateNames('New Foodies', ALLOWED)).toEqual([]);
+    expect(validateCandidateNames(null, ALLOWED)).toEqual([]);
   });
 });
 

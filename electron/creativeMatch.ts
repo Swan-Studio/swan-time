@@ -84,6 +84,20 @@ export function shortlistCreatives(
     .map(s => s.c);
 }
 
+// Validate a model-returned candidate list: exact-case names from `allowed`
+// only, deduped, capped at 3. Hallucinated names and junk entries drop out.
+export function validateCandidateNames(raw: unknown, allowed: string[]): string[] {
+  if (!Array.isArray(raw)) return [];
+  return [
+    ...new Set(
+      raw
+        .filter((n): n is string => typeof n === 'string')
+        .map(n => allowed.find(c => c.toLowerCase() === n.toLowerCase()))
+        .filter((n): n is string => Boolean(n))
+    )
+  ].slice(0, 3);
+}
+
 export function resolveCreativeByName(
   name: string | null | undefined,
   creatives: CreativeRef[]

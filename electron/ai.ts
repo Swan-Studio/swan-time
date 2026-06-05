@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { CATEGORIES, DIVISIONS } from './monday';
+import { validateCandidateNames } from './creativeMatch';
 import { store } from './store';
 import { SWAN_SHARED_ANTHROPIC_KEY } from './sharedKey';
 
@@ -37,6 +38,7 @@ export type CategorySuggestion = {
   clientName?: string;
   creativeId?: number; // resolved in main.ts via resolveCreativeByName — ai.ts only sees names
   creativeName?: string;
+  candidateNames?: string[]; // set instead of creativeName when several candidates plausibly fit (<= 3, validated)
   division?: string;
   category?: string;
   confidence: number;
@@ -58,7 +60,8 @@ export async function suggestCategory(
     : '';
 
   const creativesHint = context.creativeCandidates?.length
-    ? `\nCandidate creatives (pick exactly one the activity refers to, or null — only names from this list): ${context.creativeCandidates.join(', ')}.`
+    ? `\nCandidate creatives (only names from this list): ${context.creativeCandidates.join(', ')}.
+Creative rules: set "creativeName" ONLY when exactly one candidate clearly matches the activity. When SEVERAL candidates plausibly match and you cannot tell which, set "creativeName" to null and list them (max 3) in "creativeCandidates". When none match, both are null. Never set both.`
     : '';
 
   // Confidence rubric matters: the UI hides suggestions at confidence <= 0.5,
@@ -67,7 +70,7 @@ export async function suggestCategory(
   // strip never appeared (debugged live 2026-06-04: "working on the foodie
   // creative" → Production/Editing at 0.45, silently discarded).
   const sys = `You classify time-tracking activity names for a creative agency.
-Return strict JSON only, no prose: {"clientName": string|null, "creativeName": string|null, "division": string|null, "category": string|null, "confidence": 0..1}.
+Return strict JSON only, no prose: {"clientName": string|null, "creativeName": string|null, "creativeCandidates": string[]|null, "division": string|null, "category": string|null, "confidence": 0..1}.
 Allowed divisions: ${DIVISIONS.join(', ')}.
 Allowed categories: ${CATEGORIES.join(', ')}.${clientsHint}${creativesHint}
 Infer the client from the activity name or from similar recent activities. The client and creative are OPTIONAL — returning null for clientName or creativeName is normal and must NOT lower confidence.
@@ -105,9 +108,17 @@ ${recentLines || '(none)'}`;
             n => n.toLowerCase() === parsed.creativeName.toLowerCase()
           )
         : undefined;
+    // Ambiguous path: a confident single name suppresses candidates; a lone
+    // surviving candidate (after hallucinations drop) isn't ambiguous OR
+    // confident, so it's dropped too — degrades to division/category.
+    const candidateNames =
+      !creativeMatch && context.creativeCandidates
+        ? validateCandidateNames(parsed.creativeCandidates, context.creativeCandidates)
+        : [];
     return {
       clientName: clientMatch,
       creativeName: creativeMatch,
+      candidateNames: candidateNames.length >= 2 ? candidateNames : undefined,
       division: DIVISIONS.includes(parsed.division) ? parsed.division : undefined,
       category: CATEGORIES.includes(parsed.category) ? parsed.category : undefined,
       confidence: Math.max(0, Math.min(1, Number(parsed.confidence) || 0))
