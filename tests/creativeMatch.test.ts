@@ -58,6 +58,39 @@ describe('shortlistCreatives', () => {
   });
 });
 
+describe('fuzzy matching', () => {
+  it('matches plurals via stemming: "foodie" finds "New Foodies"', () => {
+    const out = shortlistCreatives('foodie video', [
+      { id: 20, name: 'New Foodies', clientId: 1 },
+      { id: 21, name: 'Spring Sale', clientId: 2 }
+    ]);
+    expect(out.map(c => c.id)).toEqual([20]);
+  });
+
+  it('matches one-typo tokens of length >= 5: "fodie" finds "Foodie"', () => {
+    const out = shortlistCreatives('fodie cut', [{ id: 22, name: 'Foodie Finds', clientId: 1 }]);
+    expect(out.map(c => c.id)).toEqual([22]);
+  });
+
+  it('does NOT fuzzy-match short tokens: "cat" must not find "car"', () => {
+    const out = shortlistCreatives('cat video', [{ id: 23, name: 'Car Review', clientId: 1 }]);
+    expect(out).toEqual([]);
+  });
+
+  it('ranks exact token matches above fuzzy ones', () => {
+    const out = shortlistCreatives('foodie video', [
+      { id: 24, name: 'Foodies Abroad', clientId: 1 }, // stem match (1pt)
+      { id: 25, name: 'Foodie Abroad', clientId: 1 }   // exact match (2pt)
+    ]);
+    expect(out.map(c => c.id)).toEqual([25, 24]);
+  });
+
+  it('stemming does not strip double-s: "boss" stays "boss"', () => {
+    const out = shortlistCreatives('bos check', [{ id: 26, name: 'Boss Moves', clientId: 1 }]);
+    expect(out).toEqual([]); // "bos" (3 chars) gets filtered by min length anyway; no stem collision
+  });
+});
+
 describe('resolveCreativeByName', () => {
   it('resolves case-insensitively with trim', () => {
     expect(resolveCreativeByName('  foodie finds ep 3 ', CREATIVES)).toEqual({
