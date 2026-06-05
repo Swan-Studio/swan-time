@@ -300,6 +300,14 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
           pickCreative(c.id, c.name);
           applySuggestionMeta();
         }}
+        onPickNone={() => {
+          // Explicitly no creative: still take the AI's client guess + meta.
+          if (suggestion.clientName) {
+            const match = clients.find(c => c.name.toLowerCase() === suggestion.clientName!.toLowerCase());
+            if (match) pickClient(match.id, match.name);
+          }
+          applySuggestionMeta();
+        }}
         onSearchAll={() => {
           // Keep the AI's division/category, then hand off to the full picker.
           applySuggestionMeta();
@@ -324,6 +332,11 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
             options={creativesForClient(creatives, clientId).map(c => ({ id: c.id, label: c.name }))}
             onChange={(id, label) => pickCreative(Number(id), label)}
             openSignal={creativePickerSignal}
+            clearLabel="No creative"
+            onClear={() => {
+              setCreativeId(undefined);
+              setCreativeName(undefined);
+            }}
           />
         )}
         <Picker

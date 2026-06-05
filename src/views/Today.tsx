@@ -260,6 +260,10 @@ export function Today({ onClose }: Props) {
                             };
                           })
                         }
+                        clearLabel="No creative"
+                        onClear={() =>
+                          setDraft(d => d && { ...d, creativeId: undefined, creativeName: undefined })
+                        }
                       />
                     )}
                     <Picker

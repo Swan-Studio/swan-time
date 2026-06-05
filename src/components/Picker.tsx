@@ -12,6 +12,9 @@ type Props = {
   optionMeta?: (id: string | number, label: string) => ReactNode;
   /** Increment to open the dropdown programmatically (e.g. AI strip's "Search all…"). */
   openSignal?: number;
+  /** When set (with onClear) and a value is selected, show a row that clears the selection. */
+  clearLabel?: string;
+  onClear?: () => void;
 };
 
 type Coords = {
@@ -22,7 +25,7 @@ type Coords = {
   listMax: number;
 };
 
-export function Picker({ label, value, options, onChange, placeholder, highlightId, optionMeta, openSignal }: Props) {
+export function Picker({ label, value, options, onChange, placeholder, highlightId, optionMeta, openSignal, clearLabel, onClear }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [coords, setCoords] = useState<Coords | null>(null);
@@ -124,6 +127,18 @@ export function Picker({ label, value, options, onChange, placeholder, highlight
             className="w-full px-3 py-2 text-[13px] bg-transparent border-b border-line"
           />
           <div className="overflow-y-auto py-1" style={{ maxHeight: coords.listMax }}>
+            {clearLabel && onClear && value && (
+              <button
+                onClick={() => {
+                  onClear();
+                  setOpen(false);
+                  setQuery('');
+                }}
+                className="w-full text-left py-1.5 px-3 text-[13px] text-mute italic hover:bg-black/[0.05] border-b border-line"
+              >
+                {clearLabel}
+              </button>
+            )}
             {filtered.length === 0 && (
               <div className="px-3 py-2 text-[12px] text-mute">No matches</div>
             )}

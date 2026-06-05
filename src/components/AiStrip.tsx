@@ -11,6 +11,7 @@ type Props = {
   confidence: number;
   onAccept: () => void;
   onPickCandidate: (c: Candidate) => void;
+  onPickNone: () => void;
   onSearchAll: () => void;
   onDismiss: () => void;
 };
@@ -24,6 +25,7 @@ export function AiStrip({
   confidence,
   onAccept,
   onPickCandidate,
+  onPickNone,
   onSearchAll,
   onDismiss
 }: Props) {
@@ -108,6 +110,15 @@ export function AiStrip({
               {c.clientName && <span className="text-mute text-[11px] shrink-0">{c.clientName}</span>}
             </button>
           ))}
+          <button
+            onClick={() => {
+              setMenuOpen(false);
+              onPickNone();
+            }}
+            className="w-full text-left px-3 py-2 text-[12px] text-mute italic hover:bg-black/[0.05] border-t border-line"
+          >
+            No creative
+          </button>
           <button
             onClick={() => {
               setMenuOpen(false);

@@ -414,6 +414,8 @@ export function Batch({ onClose }: Props) {
                   placeholder="—"
                   options={creativesForClient(creatives, r.clientId).map(c => ({ id: c.id, label: c.name }))}
                   onChange={(id, label) => pickRowCreative(r.id, Number(id), label)}
+                  clearLabel="No creative"
+                  onClear={() => update(r.id, { creativeId: undefined, creativeName: undefined })}
                 />
               )}
               <Picker
