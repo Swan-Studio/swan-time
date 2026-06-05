@@ -8,3 +8,4 @@ release
 .env.local
 electron/sharedKey.ts
 electron/mondayOAuth.ts
+.superpowers/
