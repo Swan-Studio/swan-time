@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { CATEGORIES, DIVISIONS } from './monday';
-import { validateCandidateNames } from './creativeMatch';
+import { nameKey, validateCandidateNames } from './creativeMatch';
 import { store } from './store';
 import { SWAN_SHARED_ANTHROPIC_KEY } from './sharedKey';
 
@@ -100,12 +100,12 @@ ${recentLines || '(none)'}`;
     if (!m) return { confidence: 0 };
     const parsed = JSON.parse(m[0]);
     const clientMatch = typeof parsed.clientName === 'string'
-      ? context.clients.find(c => c.toLowerCase() === parsed.clientName.toLowerCase())
+      ? context.clients.find(c => nameKey(c) === nameKey(parsed.clientName))
       : undefined;
     const creativeMatch =
       typeof parsed.creativeName === 'string' && context.creativeCandidates
         ? context.creativeCandidates.find(
-            n => n.toLowerCase() === parsed.creativeName.toLowerCase()
+            n => nameKey(n) === nameKey(parsed.creativeName)
           )
         : undefined;
     // Ambiguous path: a confident single name suppresses candidates; a lone
@@ -229,12 +229,12 @@ Return ONLY the JSON array, no commentary, no code fences. If text has no parsea
           : undefined);
       const category = CATEGORIES.includes(row.category) ? row.category : undefined;
       const clientMatch = typeof row.clientName === 'string'
-        ? context.clients.find(c => c.toLowerCase() === row.clientName.toLowerCase())
+        ? context.clients.find(c => nameKey(c) === nameKey(row.clientName))
         : undefined;
       const creativeMatch =
         typeof row.creativeName === 'string' && context.creativeCandidates
           ? context.creativeCandidates.find(
-              n => n.toLowerCase() === row.creativeName.toLowerCase()
+              n => nameKey(n) === nameKey(row.creativeName)
             )
           : undefined;
       return {

@@ -89,6 +89,33 @@ describe('fuzzy matching', () => {
     const out = shortlistCreatives('bos check', [{ id: 26, name: 'Boss Moves', clientId: 1 }]);
     expect(out).toEqual([]); // "bos" (3 chars) gets filtered by min length anyway; no stem collision
   });
+
+  it('rare concept tokens outrank a flood of generic-token matches', () => {
+    // Root cause 2026-06-05: ~15 creatives containing the literal token
+    // "video" each beat New Foodies' stem match on pure match-count, pushing
+    // it past the cap. Rarity weighting must put the foodie match first.
+    const flood = Array.from({ length: 20 }, (_, i) => ({ id: 100 + i, name: `Campaign ${i} Video`, clientId: 1 }));
+    const out = shortlistCreatives('foodie video', [...flood, { id: 1, name: 'New Foodies', clientId: 2 }]);
+    expect(out[0].id).toBe(1);
+  });
+});
+
+describe('apostrophe/quote normalization', () => {
+  // Root cause 2026-06-05: the board name "Foodie’s life hack" uses a curly
+  // apostrophe; the model echoes a straight one and the creative silently
+  // dropped out of both resolution and candidate validation.
+  it('resolveCreativeByName matches across curly/straight apostrophes', () => {
+    const list = [{ id: 30, name: 'Foodie’s life hack', clientId: 1 }];
+    expect(resolveCreativeByName("foodie's life hack", list)).toEqual({
+      creativeId: 30,
+      creativeName: 'Foodie’s life hack'
+    });
+  });
+
+  it('validateCandidateNames matches across curly/straight apostrophes', () => {
+    expect(validateCandidateNames(["foodie's life hack"], ['Foodie’s life hack']))
+      .toEqual(['Foodie’s life hack']);
+  });
 });
 
 describe('validateCandidateNames', () => {

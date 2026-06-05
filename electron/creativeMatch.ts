@@ -66,12 +66,23 @@ export function shortlistCreatives(
   const cap = opts.cap ?? 15;
   const textTokens = tokens(text);
   const textTokenList = [...textTokens];
+  // Rarity weighting: in a video agency ~15 creative names contain the
+  // literal token "video", so a generic-token match carries almost no signal
+  // — counting matches equally let them flood the cap and crowd out the one
+  // creative that matched the rare concept word (bit us live 2026-06-05).
+  const creativeTokens = creatives.map(c => [...tokens(c.name)]);
+  const df = new Map<string, number>();
+  for (const ts of creativeTokens) for (const t of ts) df.set(t, (df.get(t) || 0) + 1);
+  const n = Math.max(1, creatives.length);
+  // Smoothed (1 + n/df) so even an every-creative token keeps a positive
+  // weight — a plain n/df hits ln(1)=0 and zeroes out small candidate lists.
+  const idf = (t: string) => Math.log(1 + n / (df.get(t) || 1));
   return creatives
-    .map(c => {
+    .map((c, i) => {
       let score = 0;
-      for (const t of tokens(c.name)) {
-        if (textTokens.has(t)) score += 2; // exact outranks fuzzy
-        else if (textTokenList.some(x => fuzzyTokenMatch(x, t))) score += 1;
+      for (const t of creativeTokens[i]) {
+        if (textTokens.has(t)) score += idf(t) + 0.5; // small exact-match bonus over fuzzy
+        else if (textTokenList.some(x => fuzzyTokenMatch(x, t))) score += idf(t);
       }
       // Client boost: every creative of the known client makes the list, so
       // the model can pick one even when the activity text shares no tokens.
@@ -84,6 +95,13 @@ export function shortlistCreatives(
     .map(s => s.c);
 }
 
+// Comparison key for creative/client names: board names use curly quotes
+// ("Foodie’s life hack") but the model echoes straight ones — a raw
+// toLowerCase compare silently dropped the match (bit us live 2026-06-05).
+export function nameKey(s: string): string {
+  return s.trim().toLowerCase().replace(/[’‘]/g, "'").replace(/[“”]/g, '"');
+}
+
 // Validate a model-returned candidate list: exact-case names from `allowed`
 // only, deduped, capped at 3. Hallucinated names and junk entries drop out.
 export function validateCandidateNames(raw: unknown, allowed: string[]): string[] {
@@ -92,7 +110,7 @@ export function validateCandidateNames(raw: unknown, allowed: string[]): string[
     ...new Set(
       raw
         .filter((n): n is string => typeof n === 'string')
-        .map(n => allowed.find(c => c.toLowerCase() === n.toLowerCase()))
+        .map(n => allowed.find(c => nameKey(c) === nameKey(n)))
         .filter((n): n is string => Boolean(n))
     )
   ].slice(0, 3);
@@ -103,9 +121,9 @@ export function resolveCreativeByName(
   creatives: CreativeRef[]
 ): { creativeId: number; creativeName: string } | undefined {
   if (typeof name !== 'string' || !name.trim()) return undefined;
-  const needle = name.trim().toLowerCase();
+  const needle = nameKey(name);
   // Duplicate names across clients: first match wins — acceptable for a
   // best-effort suggestion the user can always change.
-  const m = creatives.find(c => c.name.toLowerCase() === needle);
+  const m = creatives.find(c => nameKey(c.name) === needle);
   return m ? { creativeId: m.id, creativeName: m.name } : undefined;
 }
