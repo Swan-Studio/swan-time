@@ -96,7 +96,9 @@ function createWindow() {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   if (isDev) {
-    win.loadURL('http://localhost:5173');
+    // SWAN_DEV_URL lets the dev stack run on an alternate port when 5173 is
+    // taken by another project's vite.
+    win.loadURL(process.env.SWAN_DEV_URL || 'http://localhost:5173');
   } else {
     win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   }
