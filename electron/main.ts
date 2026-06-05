@@ -605,7 +605,27 @@ function registerIpc() {
     // Attach the id for the renderer; an unknown/hallucinated name resolves
     // to undefined and the suggestion degrades to client/division/category.
     const resolved = resolveCreativeByName(suggestion.creativeName, candidates);
-    return { ...suggestion, creativeName: resolved?.creativeName, creativeId: resolved?.creativeId };
+    // Ambiguous path: resolve each candidate name to {id, name, clientName}
+    // for the chooser dropdown. Names that fail to resolve are dropped.
+    const clientNameById = new Map(clients.map(c => [c.id, c.name]));
+    const candidateRefs = (suggestion.candidateNames ?? [])
+      .map(n => resolveCreativeByName(n, candidates))
+      .filter((r): r is { creativeId: number; creativeName: string } => Boolean(r))
+      .map(r => {
+        const ref = candidates.find(c => c.id === r.creativeId);
+        return {
+          id: r.creativeId,
+          name: r.creativeName,
+          clientName: ref?.clientId !== undefined ? clientNameById.get(ref.clientId) : undefined
+        };
+      });
+    return {
+      ...suggestion,
+      creativeName: resolved?.creativeName,
+      creativeId: resolved?.creativeId,
+      candidates: candidateRefs.length >= 2 ? candidateRefs : undefined,
+      candidateNames: undefined
+    };
   });
   ipcMain.handle('ai:summary', async () => {
     const boardId = store.get('boardId');
