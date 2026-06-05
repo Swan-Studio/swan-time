@@ -49,6 +49,7 @@ import {
 } from './monday';
 import { suggestCategory, dailySummary, aiStatus, parseBatch } from './ai';
 import { shortlistCreatives, resolveCreativeByName, type CreativeRef } from './creativeMatch';
+import { targetBoundsFor, COMPACT_SIZE, type WidgetMode } from './windowBounds';
 
 const isDev = !app.isPackaged;
 let win: BrowserWindow | null = null;
@@ -56,12 +57,8 @@ let quitting = false; // set in before-quit so the close→hide interception doe
 let tray: Tray | null = null;
 let tickInterval: NodeJS.Timeout | null = null;
 let nudgeTimeout: NodeJS.Timeout | null = null;
-let widgetMode: 'compact' | 'batch' | 'nudge' = 'compact';
+let widgetMode: WidgetMode = 'compact';
 let lastBounds: Electron.Rectangle | null = null;
-
-const COMPACT_SIZE = { width: 380, height: 480 };
-const BATCH_SIZE = { width: 760, height: 560 };
-const NUDGE_SIZE = { width: 380, height: 56 };
 
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) {
@@ -106,8 +103,8 @@ function createWindow() {
 
   win.on('blur', () => {
     if (widgetMode === 'nudge') return; // nudges close only via 30s timer or expand; don't pollute lastBounds with nudge size
-    if (win) lastBounds = win.getBounds();
-    if (store.get('settings').closeOnBlur !== false) win?.hide();
+    if (store.get('settings').closeOnBlur !== false) hideWindow();
+    else if (win) lastBounds = win.getBounds();
   });
 
   // ⌘W is live via Electron's default application menu even though LSUIElement
@@ -126,81 +123,70 @@ function createWindow() {
   });
 }
 
-// Anchor a window of the given size near the tray icon. Default below; flip
-// above when the tray sits in the lower half of the work area (Windows
-// taskbar-at-bottom case). Always clamped inside workArea so the popover
-// can't end up off-screen.
-function placeNearTray(size: { width: number; height: number }): { x: number; y: number } | null {
-  if (!tray) return null;
-  const trayBounds = tray.getBounds();
-  const work = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y }).workArea;
-  const x = Math.round(
-    Math.min(
-      Math.max(trayBounds.x + trayBounds.width / 2 - size.width / 2, work.x + 8),
-      work.x + work.width - size.width - 8
-    )
-  );
-  const preferAbove = trayBounds.y + trayBounds.height / 2 > work.y + work.height / 2;
-  const rawY = preferAbove ? trayBounds.y - size.height - 6 : trayBounds.y + trayBounds.height + 6;
-  const y = Math.round(Math.min(Math.max(rawY, work.y + 8), work.y + work.height - size.height - 8));
-  return { x, y };
-}
-
-function setWidgetMode(mode: 'compact' | 'batch' | 'nudge') {
-  if (!win) return;
-  widgetMode = mode;
-  win.setResizable(mode === 'batch');
-  if (mode === 'batch') {
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    const x = Math.round(display.workArea.x + (display.workArea.width - BATCH_SIZE.width) / 2);
-    const y = Math.round(display.workArea.y + (display.workArea.height - BATCH_SIZE.height) / 2);
-    win.setBounds({ x, y, ...BATCH_SIZE }, true);
-    win.setAlwaysOnTop(false);
-  } else {
-    const size = mode === 'nudge' ? NUDGE_SIZE : COMPACT_SIZE;
-    win.setAlwaysOnTop(true);
-    const placement = placeNearTray(size);
-    if (placement) {
-      win.setBounds({ ...placement, ...size }, true);
-    } else {
-      win.setSize(size.width, size.height);
-    }
-  }
-  win.webContents.send('widget:mode', mode);
-}
-
-function positionNearTray() {
-  if (!win || !tray) return;
-  const winBounds = win.getBounds();
-  const placement = placeNearTray({ width: winBounds.width, height: winBounds.height });
-  if (placement) win.setPosition(placement.x, placement.y, false);
-}
-
-function showWindow() {
+// THE single owner of window geometry + visibility. Invariants:
+//   1. every show declares its mode (no path can show a stale-size window)
+//   2. resizes never animate (mode morphs snap; no macOS grow effect)
+//   3. closing goes hide-first, resize-after via hideWindow()
+function applyWidgetMode(
+  mode: WidgetMode,
+  opts: { show?: boolean; focus?: boolean; showInactive?: boolean } = {}
+) {
   // Recreate on demand — a destroyed window must never brick the tray/hotkey.
   if (!win || win.isDestroyed()) createWindow();
   if (!win) return;
-  // Sticky-widget mode: restore exact last bounds. Popover mode: re-anchor to tray.
-  const sticky = store.get('settings').closeOnBlur === false;
+  widgetMode = mode;
+  win.setResizable(mode === 'batch');
+  win.setAlwaysOnTop(mode !== 'batch');
+  const trayBounds = tray ? tray.getBounds() : null;
+  const anchorPoint =
+    mode === 'batch' || !trayBounds
+      ? screen.getCursorScreenPoint()
+      : { x: trayBounds.x, y: trayBounds.y };
+  const workArea = screen.getDisplayNearestPoint(anchorPoint).workArea;
+  const target = targetBoundsFor(mode, { trayBounds, workArea });
+  // Sticky-widget mode restores the last *position*; size always follows mode.
+  const sticky = mode === 'compact' && store.get('settings').closeOnBlur === false && lastBounds;
   if (sticky && lastBounds) {
-    win.setBounds(lastBounds);
+    win.setBounds(
+      { x: lastBounds.x, y: lastBounds.y, width: target.width, height: target.height },
+      false
+    );
+  } else if (target.x !== undefined && target.y !== undefined) {
+    win.setBounds({ x: target.x, y: target.y, width: target.width, height: target.height }, false);
   } else {
-    positionNearTray();
+    win.setSize(target.width, target.height, false);
   }
-  win.show();
-  win.focus();
-  win.webContents.send('window:show');
+  win.webContents.send('widget:mode', mode);
+  if (opts.show) {
+    win.show();
+    if (opts.focus) win.focus();
+    win.webContents.send('window:show');
+  } else if (opts.showInactive) {
+    win.showInactive();
+  }
+}
+
+function showWindow() {
+  applyWidgetMode('compact', { show: true, focus: true });
+}
+
+// Hide first, normalize size while invisible — the next show is always
+// pre-sized and the user never sees a resize animation.
+function hideWindow() {
+  if (!win || win.isDestroyed()) return;
+  if (widgetMode !== 'nudge') lastBounds = win.getBounds();
+  win.hide();
+  applyWidgetMode('compact');
 }
 
 function toggleWindow() {
-  if (!win || win.isDestroyed()) {
-    showWindow(); // recreates the window
-    return;
-  }
-  if (win.isVisible()) {
-    win.hide();
+  if (win && !win.isDestroyed() && win.isVisible()) {
+    // Tray click while the nudge banner is up means "open the widget",
+    // not "dismiss" — morph in place (snap, invariant 2).
+    if (widgetMode === 'nudge') applyWidgetMode('compact', { show: true, focus: true });
+    else hideWindow();
   } else {
-    showWindow();
+    applyWidgetMode('compact', { show: true, focus: true });
   }
 }
 
@@ -238,10 +224,7 @@ function createTray() {
       {
         label: 'Batch entry…',
         accelerator: 'CommandOrControl+Shift+B',
-        click: () => {
-          showWindow();
-          setWidgetMode('batch');
-        }
+        click: () => applyWidgetMode('batch', { show: true, focus: true })
       },
       { type: 'separator' },
       { label: 'Sign out', click: async () => { await clearToken(); store.clear(); clearColumnCache(); clearClientsCache(); clearCreativesCache(); clearEntriesCache(); } },
@@ -313,9 +296,8 @@ function fireNudge() {
   if (store.get('settings').nudgesEnabled === false) return;
   // If the user is already in the widget, don't yank them into the small banner.
   if (win.isVisible()) return;
-  setWidgetMode('nudge');
   // showInactive avoids stealing focus from whatever they're working in.
-  win.showInactive();
+  applyWidgetMode('nudge', { showInactive: true });
 }
 
 function scheduleNextNudge() {
@@ -633,22 +615,14 @@ function registerIpc() {
   });
 
   // Batch
-  ipcMain.handle('batch:open', () => {
-    showWindow();
-    setWidgetMode('batch');
-  });
-  ipcMain.handle('batch:close', () => setWidgetMode('compact'));
+  ipcMain.handle('batch:open', () => applyWidgetMode('batch', { show: true, focus: true }));
+  ipcMain.handle('batch:close', () => applyWidgetMode('compact', { show: true, focus: true }));
 
   // Nudge
-  ipcMain.handle('nudge:expand', () => {
-    setWidgetMode('compact');
-    win?.focus();
-  });
-  ipcMain.handle('nudge:close', () => {
-    // Reset to compact size before hiding so the next show is the normal widget.
-    setWidgetMode('compact');
-    win?.hide();
-  });
+  ipcMain.handle('nudge:expand', () => applyWidgetMode('compact', { show: true, focus: true }));
+  // Hide first, then normalize size while invisible (invariant 3) — closing
+  // the banner must never play a grow animation.
+  ipcMain.handle('nudge:close', () => hideWindow());
 
   ipcMain.handle('batch:parse', async (_e, text: string) => {
     const clients = await listClients();

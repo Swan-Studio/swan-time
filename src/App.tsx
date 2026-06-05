@@ -70,11 +70,12 @@ export default function App() {
 
   useEffect(() => {
     refresh();
+    // Screen is DERIVED from widget:mode — every show/hide emits a mode, so
+    // the renderer can never disagree with the window's real size (the old
+    // split-brain stuck the 56px nudge chip on tray-click, fixed 2026-06-05).
     const off = swan.onShow(async () => {
       raiseShield();
-      const t = await swan.getRunning();
-      setTimer(t);
-      if (t && screen !== 'stopgate' && screen !== 'batch') setScreen('running');
+      setTimer(await swan.getRunning());
     });
     const offMode = swan.onWidgetMode(async mode => {
       raiseShield();
@@ -87,7 +88,13 @@ export default function App() {
       } else {
         const t = await swan.getRunning();
         setTimer(t);
-        setScreen(t ? 'running' : 'tracker');
+        // compact fires on every show/hide-normalize; never stomp an
+        // in-progress stop confirmation or a pre-auth screen.
+        setScreen(prev =>
+          prev === 'stopgate' || prev === 'auth' || prev === 'pickBoard' || prev === 'loading'
+            ? prev
+            : t ? 'running' : 'tracker'
+        );
       }
     });
     return () => {
