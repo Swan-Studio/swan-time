@@ -41,11 +41,13 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
     clientName?: string;
     creativeId?: number;
     creativeName?: string;
+    candidates?: Array<{ id: number; name: string; clientName?: string }>;
     division?: string;
     category?: string;
     confidence: number;
   }>({ confidence: 0 });
   const [dismissed, setDismissed] = useState(false);
+  const [creativePickerSignal, setCreativePickerSignal] = useState(0);
   const [lastLogStatus, setLastLogStatus] = useState<{ lastDate: string | null; daysSince: number | null } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounce = useRef<number | null>(null);
@@ -93,6 +95,12 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
       swan.suggestCategory(name).then(setSuggestion).catch(() => {});
     }, 600);
   }, [name, aiOn, dismissed]);
+
+  function applySuggestionMeta() {
+    if (suggestion.division) setDivision(suggestion.division);
+    if (suggestion.category) setCategory(suggestion.category);
+    setDismissed(true);
+  }
 
   function applyRecent(r: Recent) {
     setName(r.name);
@@ -286,9 +294,16 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
             const match = clients.find(c => c.name.toLowerCase() === suggestion.clientName!.toLowerCase());
             if (match) pickClient(match.id, match.name);
           }
-          if (suggestion.division) setDivision(suggestion.division);
-          if (suggestion.category) setCategory(suggestion.category);
-          setDismissed(true);
+          applySuggestionMeta();
+        }}
+        onPickCandidate={c => {
+          pickCreative(c.id, c.name);
+          applySuggestionMeta();
+        }}
+        onSearchAll={() => {
+          // Keep the AI's division/category, then hand off to the full picker.
+          applySuggestionMeta();
+          setCreativePickerSignal(s => s + 1);
         }}
         onDismiss={() => setDismissed(true)}
       />
@@ -308,6 +323,7 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
             placeholder="—"
             options={creativesForClient(creatives, clientId).map(c => ({ id: c.id, label: c.name }))}
             onChange={(id, label) => pickCreative(Number(id), label)}
+            openSignal={creativePickerSignal}
           />
         )}
         <Picker

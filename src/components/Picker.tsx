@@ -10,6 +10,8 @@ type Props = {
   placeholder?: string;
   highlightId?: string | number;
   optionMeta?: (id: string | number, label: string) => ReactNode;
+  /** Increment to open the dropdown programmatically (e.g. AI strip's "Search all…"). */
+  openSignal?: number;
 };
 
 type Coords = {
@@ -20,7 +22,7 @@ type Coords = {
   listMax: number;
 };
 
-export function Picker({ label, value, options, onChange, placeholder, highlightId, optionMeta }: Props) {
+export function Picker({ label, value, options, onChange, placeholder, highlightId, optionMeta, openSignal }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [coords, setCoords] = useState<Coords | null>(null);
@@ -38,6 +40,10 @@ export function Picker({ label, value, options, onChange, placeholder, highlight
     document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [open]);
+
+  useEffect(() => {
+    if (openSignal) setOpen(true);
+  }, [openSignal]);
 
   // Position the dropdown using fixed coordinates so it escapes any overflow
   // ancestors and respects the window viewport (including the title bar).
