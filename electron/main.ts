@@ -30,7 +30,7 @@ import {
   whoAmI,
   getAccountSlug,
   findUserBoard,
-  listClients,
+  listClientsForBoard,
   listCreatives,
   listTimeTrackerBoards,
   logEntry,
@@ -365,6 +365,18 @@ async function creativeCandidateRefs(): Promise<CreativeRef[]> {
   }
 }
 
+// Client list for AI context — same best-effort rule: boards without a client
+// column (e.g. guest setups) just get no client names in the prompt.
+async function clientCandidates(): Promise<Array<{ id: number; name: string }>> {
+  try {
+    const boardId = store.get('boardId');
+    if (!boardId) return [];
+    return await listClientsForBoard(boardId);
+  } catch {
+    return [];
+  }
+}
+
 function registerIpc() {
   // Updates
   ipcMain.handle('update:status', () => getUpdateState());
@@ -407,7 +419,11 @@ function registerIpc() {
   });
 
   // Monday
-  ipcMain.handle('monday:clients', () => listClients());
+  ipcMain.handle('monday:clients', async () => {
+    const boardId = store.get('boardId');
+    if (!boardId) return [];
+    return listClientsForBoard(boardId);
+  });
   ipcMain.handle('monday:creatives', () => listCreatives());
   // Capability check: the Creative picker only renders when the user's board
   // carries a board_relation column connected to the Creatives board. Boards
@@ -417,6 +433,17 @@ function registerIpc() {
     if (!boardId) return false;
     try {
       return (await getBoardCols(boardId)).creative !== null;
+    } catch {
+      return false;
+    }
+  });
+  // Same capability check for the Client picker — boards without a client
+  // board_relation column (e.g. guest boards) hide client selection entirely.
+  ipcMain.handle('monday:clientsEnabled', async () => {
+    const boardId = store.get('boardId');
+    if (!boardId) return false;
+    try {
+      return (await getBoardCols(boardId)).client !== null;
     } catch {
       return false;
     }
@@ -597,7 +624,7 @@ function registerIpc() {
   ipcMain.handle('ai:status', () => aiStatus());
   ipcMain.handle('ai:suggest', async (_e, name: string) => {
     const recents = store.get('recents').map(r => ({ name: r.name, clientName: r.clientName }));
-    const clients = await listClients();
+    const clients = await clientCandidates();
     const candidates = shortlistCreatives(name, await creativeCandidateRefs());
     const suggestion = await suggestCategory(name, {
       recents,
@@ -647,7 +674,7 @@ function registerIpc() {
   ipcMain.handle('nudge:close', () => hideWindow());
 
   ipcMain.handle('batch:parse', async (_e, text: string) => {
-    const clients = await listClients();
+    const clients = await clientCandidates();
     // Use LOCAL date — UTC was making "yesterday" off by a day for users in
     // AU/Asia timezones where the local day is ahead of UTC.
     const now = new Date();

@@ -9,6 +9,11 @@ const ENDPOINT = 'https://api.monday.com/v2';
 // one user's IDs. See discoverBoardColumns below.
 type ColumnMap = {
   client: string | null;
+  // Members link entries to the org Clients board (board_relation); freelancer
+  // boards may instead carry a plain status or dropdown column titled "Client".
+  // The type decides where the picker options come from and the write format.
+  clientType: 'board_relation' | 'dropdown' | 'status' | null;
+  clientOptions: Array<{ id: number; name: string }> | null; // dropdown labels, null otherwise
   creative: string | null;
   person: string | null;
   date: string | null;
@@ -166,6 +171,43 @@ async function gql<T = any>(query: string, variables: Record<string, unknown> = 
   throw lastErr;
 }
 
+function parseDropdownLabels(
+  settingsStr: string | null | undefined
+): Array<{ id: number; name: string }> {
+  if (!settingsStr) return [];
+  try {
+    const labels = JSON.parse(settingsStr)?.labels;
+    if (!Array.isArray(labels)) return [];
+    return labels
+      .map((l: any) => ({ id: Number(l?.id), name: typeof l?.name === 'string' ? l.name : '' }))
+      .filter(l => Number.isFinite(l.id) && l.name.length > 0)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+
+// Status labels arrive keyed by index: { "0": "Acme" } or { "0": { name: "Acme" } }.
+// The index doubles as the write id ({ index: N }).
+function parseStatusOptions(
+  settingsStr: string | null | undefined
+): Array<{ id: number; name: string }> {
+  if (!settingsStr) return [];
+  try {
+    const labels = JSON.parse(settingsStr)?.labels;
+    if (!labels || typeof labels !== 'object' || Array.isArray(labels)) return [];
+    return Object.entries(labels)
+      .map(([k, v]: [string, any]) => ({
+        id: Number(k),
+        name: typeof v === 'string' ? v : typeof v?.name === 'string' ? v.name : ''
+      }))
+      .filter(l => Number.isFinite(l.id) && l.name.length > 0)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+
 function parseStatusLabels(settingsStr: string | null | undefined): Set<string> {
   if (!settingsStr) return new Set();
   try {
@@ -215,12 +257,14 @@ async function discoverBoardColumns(boardId: number): Promise<ColumnMap> {
   };
   const relations = byType('board_relation');
   const creative = relations.find(c => relationBoardIds(c.settings_str).includes(CREATIVES_BOARD_ID))?.id ?? null;
-  const client =
+  let client =
     relations.find(c => relationBoardIds(c.settings_str).includes(CLIENTS_BOARD_ID))?.id ??
     // Legacy fallback: a single relation column with unparseable settings is
     // the client column (pre-creatives behaviour).
     relations.find(c => c.id !== creative)?.id ??
     null;
+  let clientType: ColumnMap['clientType'] = client ? 'board_relation' : null;
+  let clientOptions: ColumnMap['clientOptions'] = null;
 
   // For the two status/label columns, classify by which canonical label set
   // each column's settings contain. Falls back to title match if the labels
@@ -245,8 +289,30 @@ async function discoverBoardColumns(boardId: number): Promise<ColumnMap> {
   if (!division) division = statuses.find(s => /division/i.test(s.title))?.id ?? null;
   if (!category) category = statuses.find(s => /category/i.test(s.title))?.id ?? null;
 
+  if (!client) {
+    // Freelancer boards: a plain status or dropdown column titled "Client"
+    // stands in for the org Clients board connection; its labels become the
+    // picker options. Checked after division/category so those status columns
+    // can never be mistaken for the client column.
+    const dropdown = byType('dropdown').find(c => /client/i.test(c.title));
+    const status = statuses.find(
+      c => c.id !== division && c.id !== category && /client/i.test(c.title)
+    );
+    if (status) {
+      client = status.id;
+      clientType = 'status';
+      clientOptions = parseStatusOptions(status.settings_str);
+    } else if (dropdown) {
+      client = dropdown.id;
+      clientType = 'dropdown';
+      clientOptions = parseDropdownLabels(dropdown.settings_str);
+    }
+  }
+
   return {
     client,
+    clientType,
+    clientOptions,
     creative,
     person: singleId('people') ?? singleId('person'), // 'person' is the legacy type
     date: singleId('date'),
@@ -395,6 +461,14 @@ export async function listClients(force = false): Promise<ClientList> {
   return clientsInflight;
 }
 
+// Board-aware client list: member boards connect to the org Clients board,
+// freelancer boards carry their own dropdown labels, guest boards have neither.
+export async function listClientsForBoard(boardId: number): Promise<ClientList> {
+  const cols = await getBoardCols(boardId);
+  if (cols.clientType === 'board_relation') return listClients();
+  return cols.clientOptions ?? []; // status/dropdown labels; [] when no client column
+}
+
 // ---------------------------------------------------------------------------
 // Creatives index
 //
@@ -493,6 +567,14 @@ export async function listCreatives(force = false): Promise<Creative[]> {
   return creativesInflight;
 }
 
+// Each client column type takes a different write shape: status by label
+// index, dropdown by label ids, board_relation by linked item ids.
+function clientColumnValue(clientType: ColumnMap['clientType'], clientId: number): unknown {
+  if (clientType === 'status') return { index: clientId };
+  if (clientType === 'dropdown') return { ids: [clientId] };
+  return { item_ids: [clientId] };
+}
+
 type LogParams = {
   boardId: number;
   userId: number;
@@ -532,7 +614,7 @@ export async function logEntry(p: LogParams) {
     [cols.category!]: { label: p.category }
   };
   if (p.clientId && cols.client) {
-    columnValues[cols.client] = { item_ids: [p.clientId] };
+    columnValues[cols.client] = clientColumnValue(cols.clientType, p.clientId);
   }
   if (p.creativeId && cols.creative) {
     columnValues[cols.creative] = { item_ids: [p.creativeId] };
@@ -603,7 +685,7 @@ export async function updateEntry(p: UpdateEntryParams) {
     [cols.category!]: { label: p.category }
   };
   if (cols.client) {
-    columnValues[cols.client] = p.clientId ? { item_ids: [p.clientId] } : null;
+    columnValues[cols.client] = p.clientId ? clientColumnValue(cols.clientType, p.clientId) : null;
   }
   if (cols.creative) {
     columnValues[cols.creative] = p.creativeId ? { item_ids: [p.creativeId] } : null;

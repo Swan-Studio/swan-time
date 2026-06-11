@@ -72,6 +72,7 @@ export function Batch({ onClose }: Props) {
   const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
   const [rows, setRows] = useState<Row[]>([newRow()]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [clientsOn, setClientsOn] = useState(false);
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [creativesOn, setCreativesOn] = useState(false);
   const [todayLoggedMinutes, setTodayLoggedMinutes] = useState(0);
@@ -98,7 +99,11 @@ export function Batch({ onClose }: Props) {
   }
 
   useEffect(() => {
-    swan.listClients().then(setClients).catch(() => {});
+    swan.clientsEnabled().then((on: boolean) => {
+      if (!on) return;
+      setClientsOn(true);
+      swan.listClients().then(setClients).catch(() => {});
+    }).catch(() => {});
     swan.creativesEnabled().then((on: boolean) => {
       if (!on) return;
       setCreativesOn(true);
@@ -358,9 +363,15 @@ export function Batch({ onClose }: Props) {
               : lowConfidence
               ? 'bg-yellow-500/[0.06]'
               : 'hover:bg-ink/[0.08]';
-          const gridCols = creativesOn
-            ? 'grid-cols-[88px_220px_180px_180px_180px_180px_80px_24px]'
-            : 'grid-cols-[88px_220px_180px_180px_180px_80px_24px]';
+          // One 180px column per optional picker (client, creative). Tailwind
+          // needs each template spelled out as a literal class to compile it.
+          const pickerCount = (clientsOn ? 1 : 0) + (creativesOn ? 1 : 0);
+          const gridCols =
+            pickerCount === 2
+              ? 'grid-cols-[88px_220px_180px_180px_180px_180px_80px_24px]'
+              : pickerCount === 1
+              ? 'grid-cols-[88px_220px_180px_180px_180px_80px_24px]'
+              : 'grid-cols-[88px_220px_180px_180px_80px_24px]';
           return (
             <div
               key={r.id}
@@ -400,13 +411,15 @@ export function Batch({ onClose }: Props) {
                 placeholder="Activity"
                 className="w-full px-2 py-1.5 bg-chip rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-ink/15"
               />
-              <Picker
-                label="Client"
-                value={r.clientName}
-                placeholder="—"
-                options={clients.map(c => ({ id: c.id, label: c.name }))}
-                onChange={(id, label) => pickRowClient(r.id, Number(id), label)}
-              />
+              {clientsOn && (
+                <Picker
+                  label="Client"
+                  value={r.clientName}
+                  placeholder="—"
+                  options={clients.map(c => ({ id: c.id, label: c.name }))}
+                  onChange={(id, label) => pickRowClient(r.id, Number(id), label)}
+                />
+              )}
               {creativesOn && (
                 <Picker
                   label="Creative"
@@ -453,7 +466,7 @@ export function Batch({ onClose }: Props) {
                 ×
               </button>
               {r.status === 'error' && r.error && (
-                <div className={`${creativesOn ? 'col-span-8' : 'col-span-7'} px-2 pt-0.5 pb-1 text-[10px] text-accent`}>{r.error}</div>
+                <div className={`${pickerCount === 2 ? 'col-span-8' : pickerCount === 1 ? 'col-span-7' : 'col-span-6'} px-2 pt-0.5 pb-1 text-[10px] text-accent`}>{r.error}</div>
               )}
             </div>
           );

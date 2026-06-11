@@ -28,6 +28,7 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
   const [division, setDivision] = useState<string | undefined>();
   const [category, setCategory] = useState<string | undefined>();
   const [clients, setClients] = useState<Client[]>([]);
+  const [clientsOn, setClientsOn] = useState(false);
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [creativesOn, setCreativesOn] = useState(false);
   const [recents, setRecents] = useState<Recent[]>([]);
@@ -54,7 +55,11 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
 
   useEffect(() => {
     inputRef.current?.focus();
-    swan.listClients().then(setClients).catch(() => {});
+    swan.clientsEnabled().then((on: boolean) => {
+      if (!on) return;
+      setClientsOn(true);
+      swan.listClients().then(setClients).catch(() => {});
+    }).catch(() => {});
     swan.creativesEnabled().then((on: boolean) => {
       if (!on) return;
       setCreativesOn(true);
@@ -317,13 +322,15 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
       />
 
       <div className="grid grid-cols-1 gap-2 mt-4">
-        <Picker
-          label="Client"
-          value={clientName}
-          placeholder="—"
-          options={clients.map(c => ({ id: c.id, label: c.name }))}
-          onChange={(id, label) => pickClient(Number(id), label)}
-        />
+        {clientsOn && (
+          <Picker
+            label="Client"
+            value={clientName}
+            placeholder="—"
+            options={clients.map(c => ({ id: c.id, label: c.name }))}
+            onChange={(id, label) => pickClient(Number(id), label)}
+          />
+        )}
         {creativesOn && (
           <Picker
             label="Creative"

@@ -12,6 +12,7 @@ const api = {
   listClients: () => ipcRenderer.invoke('monday:clients'),
   listCreatives: () => ipcRenderer.invoke('monday:creatives'),
   creativesEnabled: () => ipcRenderer.invoke('monday:creativesEnabled'),
+  clientsEnabled: () => ipcRenderer.invoke('monday:clientsEnabled'),
   listTimeTrackerBoards: () => ipcRenderer.invoke('monday:listTimeTrackerBoards'),
   setBoard: (boardId: number, boardName?: string) =>
     ipcRenderer.invoke('monday:setBoard', boardId, boardName),

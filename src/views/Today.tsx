@@ -69,6 +69,7 @@ export function Today({ onClose }: Props) {
   const [levelsOn, setLevelsOn] = useState(true);
   const [categoryMinutes, setCategoryMinutes] = useState<Record<string, number>>({});
   const [clients, setClients] = useState<Client[]>([]);
+  const [clientsOn, setClientsOn] = useState(false);
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [creativesOn, setCreativesOn] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -95,7 +96,11 @@ export function Today({ onClose }: Props) {
       setLevelsOn(s.levelsEnabled !== false);
     });
     swan.getStats().then(s => setCategoryMinutes(s.categoryMinutes)).catch(() => {});
-    swan.listClients().then(setClients).catch(() => {});
+    swan.clientsEnabled().then((on: boolean) => {
+      if (!on) return;
+      setClientsOn(true);
+      swan.listClients().then(setClients).catch(() => {});
+    }).catch(() => {});
     swan.creativesEnabled().then((on: boolean) => {
       if (!on) return;
       setCreativesOn(true);
@@ -225,23 +230,25 @@ export function Today({ onClose }: Props) {
                     className="w-full px-2 py-1.5 bg-paper rounded text-[13px] focus:outline-none focus:ring-1 focus:ring-ink/15"
                   />
                   <div className="grid grid-cols-1 gap-1.5">
-                    <Picker
-                      label="Client"
-                      value={draft!.clientName}
-                      placeholder="—"
-                      options={clients.map(c => ({ id: c.id, label: c.name }))}
-                      onChange={(id, label) =>
-                        setDraft(d => {
-                          if (!d) return d;
-                          const next = { ...d, clientId: Number(id), clientName: label };
-                          if (!creativeMatchesClient(creatives, d.creativeId, Number(id))) {
-                            next.creativeId = undefined;
-                            next.creativeName = undefined;
-                          }
-                          return next;
-                        })
-                      }
-                    />
+                    {clientsOn && (
+                      <Picker
+                        label="Client"
+                        value={draft!.clientName}
+                        placeholder="—"
+                        options={clients.map(c => ({ id: c.id, label: c.name }))}
+                        onChange={(id, label) =>
+                          setDraft(d => {
+                            if (!d) return d;
+                            const next = { ...d, clientId: Number(id), clientName: label };
+                            if (!creativeMatchesClient(creatives, d.creativeId, Number(id))) {
+                              next.creativeId = undefined;
+                              next.creativeName = undefined;
+                            }
+                            return next;
+                          })
+                        }
+                      />
+                    )}
                     {creativesOn && (
                       <Picker
                         label="Creative"
