@@ -34,7 +34,7 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Validate version
         run: echo "${{ inputs.version }}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
       - name: Guard against overwriting an existing release
@@ -71,19 +71,22 @@ jobs:
     needs: prepare
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: v${{ inputs.version }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Inject shared Anthropic key
+      - name: Inject gitignored credential files
         env:
           SWAN_ANTHROPIC_KEY: ${{ secrets.SWAN_ANTHROPIC_KEY }}
+          MONDAY_OAUTH_CLIENT_ID: ${{ secrets.MONDAY_OAUTH_CLIENT_ID }}
+          MONDAY_OAUTH_CLIENT_SECRET: ${{ secrets.MONDAY_OAUTH_CLIENT_SECRET }}
         run: |
           printf "export const SWAN_SHARED_ANTHROPIC_KEY: string | undefined =\n  '%s';\n" "$SWAN_ANTHROPIC_KEY" > electron/sharedKey.ts
+          printf "export const MONDAY_OAUTH_CLIENT_ID: string | undefined = '%s';\nexport const MONDAY_OAUTH_CLIENT_SECRET: string | undefined = '%s';\n" "$MONDAY_OAUTH_CLIENT_ID" "$MONDAY_OAUTH_CLIENT_SECRET" > electron/mondayOAuth.ts
       - run: npm run build
       - name: Package and upload to draft release
         env:
@@ -97,20 +100,23 @@ jobs:
     needs: [prepare, mac]
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: v${{ inputs.version }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Inject shared Anthropic key
+      - name: Inject gitignored credential files
         shell: bash
         env:
           SWAN_ANTHROPIC_KEY: ${{ secrets.SWAN_ANTHROPIC_KEY }}
+          MONDAY_OAUTH_CLIENT_ID: ${{ secrets.MONDAY_OAUTH_CLIENT_ID }}
+          MONDAY_OAUTH_CLIENT_SECRET: ${{ secrets.MONDAY_OAUTH_CLIENT_SECRET }}
         run: |
           printf "export const SWAN_SHARED_ANTHROPIC_KEY: string | undefined =\n  '%s';\n" "$SWAN_ANTHROPIC_KEY" > electron/sharedKey.ts
+          printf "export const MONDAY_OAUTH_CLIENT_ID: string | undefined = '%s';\nexport const MONDAY_OAUTH_CLIENT_SECRET: string | undefined = '%s';\n" "$MONDAY_OAUTH_CLIENT_ID" "$MONDAY_OAUTH_CLIENT_SECRET" > electron/mondayOAuth.ts
       - run: npm run build
       - name: Package and upload to draft release
         # nsis only — the portable exe can't auto-update, so it isn't shipped.
