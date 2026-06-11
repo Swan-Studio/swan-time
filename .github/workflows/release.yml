@@ -1,0 +1,144 @@
+# Release from the GitHub UI — Actions → Release → Run workflow. No local
+# terminal needed. Builds mac (universal DMG+zip) and Windows (NSIS setup),
+# publishes the GitHub release, and undrafts it so the in-app updater sees it.
+#
+# Replace mode implements the no-version-churn rule: re-shipping a fresh
+# release under the same version deletes the old release + tag first.
+# The updater only offers strictly newer versions, so never replace a
+# version with real install base.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 1.0.9'
+        required: true
+      replace:
+        description: 'Replace this version if it already exists (delete release + tag, rebuild from main)'
+        type: boolean
+        default: false
+      notes:
+        description: 'Release notes (markdown, optional)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate version
+        run: echo "${{ inputs.version }}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+      - name: Guard against overwriting an existing release
+        if: ${{ !inputs.replace }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ inputs.version }}" --json isDraft > /dev/null 2>&1; then
+            echo "::error::v${{ inputs.version }} already exists. Tick 'replace' to rebuild it in place."
+            exit 1
+          fi
+      - name: Delete existing release + tag (replace mode)
+        if: ${{ inputs.replace }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete "v${{ inputs.version }}" --cleanup-tag --yes || true
+          git push origin ":refs/tags/v${{ inputs.version }}" || true
+      - name: Bump version, commit, tag
+        run: |
+          V="${{ inputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          current=$(node -p "require('./package.json').version")
+          if [ "$current" != "$V" ]; then
+            npm version "$V" --no-git-tag-version
+            git commit -am "release: v$V"
+            git push origin HEAD:main
+          fi
+          git tag -f "v$V"
+          git push -f origin "v$V"
+
+  mac:
+    needs: prepare
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Inject shared Anthropic key
+        env:
+          SWAN_ANTHROPIC_KEY: ${{ secrets.SWAN_ANTHROPIC_KEY }}
+        run: |
+          printf "export const SWAN_SHARED_ANTHROPIC_KEY: string | undefined =\n  '%s';\n" "$SWAN_ANTHROPIC_KEY" > electron/sharedKey.ts
+      - run: npm run build
+      - name: Package and upload to draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac --publish always
+
+  windows:
+    # Sequential after mac so both publish into the same draft without racing
+    # to create it.
+    needs: [prepare, mac]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Inject shared Anthropic key
+        shell: bash
+        env:
+          SWAN_ANTHROPIC_KEY: ${{ secrets.SWAN_ANTHROPIC_KEY }}
+        run: |
+          printf "export const SWAN_SHARED_ANTHROPIC_KEY: string | undefined =\n  '%s';\n" "$SWAN_ANTHROPIC_KEY" > electron/sharedKey.ts
+      - run: npm run build
+      - name: Package and upload to draft release
+        # nsis only — the portable exe can't auto-update, so it isn't shipped.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win nsis --x64 --publish always
+
+  finalize:
+    needs: [prepare, mac, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stable-name assets, notes, undraft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          V="${{ inputs.version }}"
+          R="${{ github.repository }}"
+          # Fixed-name copies give a permanent latest-download URL:
+          # https://github.com/Swan-Studio/swan-time/releases/latest/download/Swan-Time.dmg
+          # The updater reads file names from latest-mac.yml / latest.yml, so the
+          # extra assets never confuse it.
+          gh release download "v$V" --repo "$R" --pattern '*-universal.dmg' --output Swan-Time.dmg
+          gh release upload "v$V" --repo "$R" Swan-Time.dmg --clobber
+          gh release download "v$V" --repo "$R" --pattern 'Swan-Time-Setup-*.exe' --output Swan-Time-Setup.exe
+          gh release upload "v$V" --repo "$R" Swan-Time-Setup.exe --clobber
+          if [ -n "$NOTES" ]; then
+            gh release edit "v$V" --repo "$R" --notes "$NOTES"
+          fi
+          gh release edit "v$V" --repo "$R" --draft=false --latest
