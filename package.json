@@ -1,6 +1,6 @@
 {
   "name": "swan-time",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Swan Studio menubar time tracker — posts to Monday.com",
   "main": "dist-electron/main.js",
   "author": "Swan Studio",
