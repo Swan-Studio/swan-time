@@ -8,7 +8,6 @@ import { Today } from './views/Today';
 import { Settings } from './views/Settings';
 import { Batch } from './views/Batch';
 import { PickBoard } from './views/PickBoard';
-import { Levels } from './views/Levels';
 import { Nudge } from './views/Nudge';
 import type { Running as RunningT } from './lib/constants';
 
@@ -22,7 +21,6 @@ type Screen =
   | 'today'
   | 'settings'
   | 'batch'
-  | 'levels'
   | 'nudge';
 
 export default function App() {
@@ -192,7 +190,6 @@ export default function App() {
           }}
           onOpenSettings={() => setScreen('settings')}
           onOpenToday={() => setScreen('today')}
-          onOpenLevels={() => setScreen('levels')}
         />
       )}
       {screen === 'running' && timer && (
@@ -218,7 +215,6 @@ export default function App() {
         />
       )}
       {screen === 'today' && <Today onClose={() => setScreen(timer ? 'running' : 'tracker')} />}
-      {screen === 'levels' && <Levels onClose={() => setScreen(timer ? 'running' : 'tracker')} />}
       {screen === 'settings' && (
         <Settings
           onClose={async () => {

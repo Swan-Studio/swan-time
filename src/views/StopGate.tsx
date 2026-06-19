@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { swan } from '../lib/swan';
 import { Picker } from '../components/Picker';
-import { CATEGORIES, DIVISIONS } from '../lib/constants';
+import { DIVISIONS } from '../lib/constants';
+import { useCategories } from '../lib/useCategories';
 import { initialSeconds } from '../lib/elapsed';
 import type { Running } from '../lib/constants';
 
@@ -14,6 +15,7 @@ type Props = {
 const MAX_MINUTES = 1440;
 
 export function StopGate({ timer, onLogged, onCancel }: Props) {
+  const categories = useCategories();
   const [division, setDivision] = useState(timer.division);
   const [category, setCategory] = useState(timer.category);
   const [busy, setBusy] = useState(false);
@@ -103,7 +105,7 @@ export function StopGate({ timer, onLogged, onCancel }: Props) {
         <Picker
           label="Category"
           value={category}
-          options={CATEGORIES.map(c => ({ id: c, label: c }))}
+          options={categories.map(c => ({ id: c, label: c }))}
           onChange={(_, l) => setCategory(l)}
         />
       </div>

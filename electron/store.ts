@@ -33,7 +33,6 @@ export type Settings = {
   primaryDivision?: string;
   closeOnBlur: boolean;
   streaksEnabled: boolean;
-  levelsEnabled: boolean;
   nudgesEnabled?: boolean;
   displayNameOverride?: string;
 };
@@ -61,8 +60,7 @@ export const store = new Store<Schema>({
       aiEnabled: false,
       hotkey: 'CommandOrControl+Alt+T',
       closeOnBlur: true,
-      streaksEnabled: true,
-      levelsEnabled: true
+      streaksEnabled: true
     }
   }
 });

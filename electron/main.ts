@@ -31,6 +31,8 @@ import {
   getAccountSlug,
   findUserBoard,
   listClientsForBoard,
+  listCategoriesForBoard,
+  CATEGORIES,
   listCreatives,
   listTimeTrackerBoards,
   logEntry,
@@ -311,46 +313,17 @@ function scheduleNextNudge() {
   }, delay);
 }
 
-// Deterministic test-mode stats so the level UI can be inspected as a
+// Deterministic test-mode stats so the streak UI can be inspected as a
 // hypothetical seasoned user. Triggered when displayNameOverride is set.
-const MOCK_CATEGORIES = [
-  'Client Meeting',
-  'Internal Meeting',
-  'Research',
-  'Scripting',
-  'Editing',
-  'Scheduling and Captioning',
-  'Shooting',
-  'Briefing',
-  'Reviews',
-  'Health Check',
-  'Setup',
-  'Production',
-  'Pre-Production',
-  'Post-Production',
-  'Client Comms',
-  'Other'
-];
-
-function mockStatsForName(name: string): {
-  streak: number;
-  categoryMinutes: Record<string, number>;
-} {
+function mockStatsForName(name: string): { streak: number } {
   let seed = 0;
   for (let i = 0; i < name.length; i++) seed = (seed * 31 + name.charCodeAt(i)) | 0;
   const rand = () => {
     seed = (seed * 1664525 + 1013904223) | 0;
     return ((seed >>> 0) % 10000) / 10000;
   };
-  const categoryMinutes: Record<string, number> = {};
-  for (const c of MOCK_CATEGORIES) {
-    const r = rand();
-    // Most categories have meaningful time; ~10% sit at 0 to mimic real spread.
-    const hours = r < 0.1 ? 0 : Math.floor(r * 220);
-    categoryMinutes[c] = hours * 60;
-  }
   const streak = 3 + Math.floor(rand() * 25);
-  return { streak, categoryMinutes };
+  return { streak };
 }
 
 // Creative candidates for AI suggestion — best-effort: any failure (no board,
@@ -425,6 +398,14 @@ function registerIpc() {
     return listClientsForBoard(boardId);
   });
   ipcMain.handle('monday:creatives', () => listCreatives());
+  // Category picker options, read live from the user's board (its Category
+  // status column) so each board can define its own set. Falls back to the
+  // bundled CATEGORIES list when no board is selected or it can't be read.
+  ipcMain.handle('monday:categories', async () => {
+    const boardId = store.get('boardId');
+    if (!boardId) return [...CATEGORIES];
+    return listCategoriesForBoard(boardId);
+  });
   // Capability check: the Creative picker only renders when the user's board
   // carries a board_relation column connected to the Creatives board. Boards
   // without the column see no UI change at all.
@@ -476,7 +457,7 @@ function registerIpc() {
   });
   ipcMain.handle('monday:stats', () => {
     const boardId = store.get('boardId');
-    if (!boardId) return { streak: 0, categoryMinutes: {} };
+    if (!boardId) return { streak: 0 };
     const override = store.get('settings').displayNameOverride?.trim();
     if (override) return mockStatsForName(override);
     return getStats(boardId);

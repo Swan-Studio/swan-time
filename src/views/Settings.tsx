@@ -12,7 +12,6 @@ export function Settings({ onClose, onSignOut }: Props) {
   const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
   const [closeOnBlur, setCloseOnBlur] = useState(true);
   const [streaksEnabled, setStreaksEnabled] = useState(true);
-  const [levelsEnabled, setLevelsEnabled] = useState(true);
   const [nudgesEnabled, setNudgesEnabled] = useState(true);
   const [displayNameOverride, setDisplayNameOverride] = useState('');
   const [canOverrideName, setCanOverrideName] = useState(false);
@@ -26,7 +25,6 @@ export function Settings({ onClose, onSignOut }: Props) {
       setPrimaryDivision(s.primaryDivision);
       setCloseOnBlur(s.closeOnBlur !== false);
       setStreaksEnabled(s.streaksEnabled !== false);
-      setLevelsEnabled(s.levelsEnabled !== false);
       setNudgesEnabled(s.nudgesEnabled !== false);
       setDisplayNameOverride(s.displayNameOverride || '');
     });
@@ -43,7 +41,6 @@ export function Settings({ onClose, onSignOut }: Props) {
       primaryDivision: primaryDivision || undefined,
       closeOnBlur,
       streaksEnabled,
-      levelsEnabled,
       nudgesEnabled,
       displayNameOverride: displayNameOverride.trim() || undefined
     });
@@ -134,21 +131,6 @@ export function Settings({ onClose, onSignOut }: Props) {
             <div className="text-[13px] text-ink">Show streak</div>
             <div className="text-[11px] text-mute leading-relaxed">
               Counts consecutive weekdays with a logged entry. Weekends don't count and don't break the streak.
-            </div>
-          </div>
-        </label>
-
-        <label className="flex items-start gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={levelsEnabled}
-            onChange={e => setLevelsEnabled(e.target.checked)}
-            className="mt-0.5 accent-accent"
-          />
-          <div>
-            <div className="text-[13px] text-ink">Show category levels</div>
-            <div className="text-[11px] text-mute leading-relaxed">
-              Level up as you log more time on a category. Lv2 at 10h, then each level needs 1.2× the previous gap.
             </div>
           </div>
         </label>

@@ -2,24 +2,23 @@ import { useEffect, useRef, useState } from 'react';
 import { swan } from '../lib/swan';
 import { Picker } from '../components/Picker';
 import { AiStrip } from '../components/AiStrip';
-import { CATEGORIES, DIVISIONS, Client, Creative, Recent } from '../lib/constants';
+import { DIVISIONS, Client, Creative, Recent } from '../lib/constants';
+import { useCategories } from '../lib/useCategories';
 import { clientForCreative, creativeMatchesClient, creativesForClient } from '../lib/creatives';
 import { minutesToHm } from '../lib/format';
-import { levelFor } from '../lib/levels';
-import { LevelPill } from '../components/LevelPill';
 import mondayLogo from '../assets/monday-logo.svg';
 
 type Props = {
   onStarted: () => void;
   onOpenToday: () => void;
   onOpenSettings: () => void;
-  onOpenLevels: () => void;
   userName?: string;
   lastLog: { minutes: number } | null;
   onClearLastLog: () => void;
 };
 
-export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, userName, lastLog, onClearLastLog }: Props) {
+export function Tracker({ onStarted, onOpenToday, onOpenSettings, userName, lastLog, onClearLastLog }: Props) {
+  const categories = useCategories();
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState<number | undefined>();
   const [clientName, setClientName] = useState<string | undefined>();
@@ -35,9 +34,7 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
   const [aiOn, setAiOn] = useState(false);
   const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
   const [streaksOn, setStreaksOn] = useState(true);
-  const [levelsOn, setLevelsOn] = useState(true);
   const [streak, setStreak] = useState(0);
-  const [categoryMinutes, setCategoryMinutes] = useState<Record<string, number>>({});
   const [suggestion, setSuggestion] = useState<{
     clientName?: string;
     creativeId?: number;
@@ -70,14 +67,12 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
       setAiOn(s.aiEnabled);
       setPrimaryDivision(s.primaryDivision);
       setStreaksOn(s.streaksEnabled !== false);
-      setLevelsOn(s.levelsEnabled !== false);
       // Pre-fill division with user's primary if not yet set.
       if (s.primaryDivision && !division) setDivision(s.primaryDivision);
     });
     swan.lastLogStatus().then(setLastLogStatus).catch(() => {});
     swan.getStats().then(s => {
       setStreak(s.streak);
-      setCategoryMinutes(s.categoryMinutes);
     }).catch(() => {});
     const off = swan.onShow(() => inputRef.current?.focus());
     return () => off();
@@ -211,18 +206,6 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
               <polyline points="12 7 12 12 15.5 14" />
             </svg>
           </button>
-          {levelsOn && (
-            <button
-              onClick={onOpenLevels}
-              className="swan-hover-icon"
-              title="Category levels"
-              aria-label="Category levels"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 20 H21 M6 20 V13 M12 20 V9 M18 20 V5" />
-              </svg>
-            </button>
-          )}
           <button
             onClick={onOpenSettings}
             className="swan-hover-icon"
@@ -356,13 +339,8 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
         <Picker
           label="Category"
           value={category}
-          options={CATEGORIES.map(c => ({ id: c, label: c }))}
+          options={categories.map(c => ({ id: c, label: c }))}
           onChange={(_, l) => setCategory(l)}
-          optionMeta={
-            levelsOn
-              ? (_, label) => <LevelPill level={levelFor(categoryMinutes[label] || 0)} />
-              : undefined
-          }
         />
       </div>
 
@@ -372,24 +350,18 @@ export function Tracker({ onStarted, onOpenToday, onOpenSettings, onOpenLevels, 
             Recent
           </div>
           <div className="space-y-1">
-            {recents.slice(0, 4).map(r => {
-              const lvl = levelsOn && r.category ? levelFor(categoryMinutes[r.category] || 0) : 0;
-              return (
-                <button
-                  key={r.name + r.lastUsed}
-                  onClick={() => applyRecent(r)}
-                  className="w-full text-left px-2 py-1.5 rounded hover:bg-black/[0.04] group"
-                >
-                  <div className="text-[13px] text-ink truncate">{r.name}</div>
-                  <div className="text-[11px] text-mute truncate flex items-center gap-1.5">
-                    <span className="truncate">
-                      {[r.clientName, r.creativeName, r.division, r.category].filter(Boolean).join(' · ') || '—'}
-                    </span>
-                    <LevelPill level={lvl} title={r.category ? `Lv ${lvl} in ${r.category}` : undefined} />
-                  </div>
-                </button>
-              );
-            })}
+            {recents.slice(0, 4).map(r => (
+              <button
+                key={r.name + r.lastUsed}
+                onClick={() => applyRecent(r)}
+                className="w-full text-left px-2 py-1.5 rounded hover:bg-black/[0.04] group"
+              >
+                <div className="text-[13px] text-ink truncate">{r.name}</div>
+                <div className="text-[11px] text-mute truncate">
+                  {[r.clientName, r.creativeName, r.division, r.category].filter(Boolean).join(' · ') || '—'}
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       )}

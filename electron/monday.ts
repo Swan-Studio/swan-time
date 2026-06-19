@@ -20,6 +20,10 @@ type ColumnMap = {
   timeTracking: string | null;
   division: string | null;
   category: string | null;
+  // Labels defined on the board's Category status column, in board order.
+  // Drives the category picker so each board can define its own set; null when
+  // the column couldn't be read, in which case callers fall back to CATEGORIES.
+  categoryOptions: string[] | null;
 };
 
 const colsCache = new Map<number, ColumnMap>();
@@ -208,6 +212,27 @@ function parseStatusOptions(
   }
 }
 
+// Like parseStatusLabels but preserves the board's display order (status labels
+// are keyed by numeric index) and returns a list rather than a set — used to
+// populate the category picker so it reads in the same order as the board.
+function parseStatusLabelsOrdered(settingsStr: string | null | undefined): string[] {
+  if (!settingsStr) return [];
+  try {
+    const labels = JSON.parse(settingsStr)?.labels;
+    if (!labels || typeof labels !== 'object' || Array.isArray(labels)) return [];
+    return Object.entries(labels)
+      .map(([k, v]: [string, any]) => ({
+        idx: Number(k),
+        name: typeof v === 'string' ? v : typeof v?.name === 'string' ? v.name : ''
+      }))
+      .filter(l => Number.isFinite(l.idx) && l.name.length > 0)
+      .sort((a, b) => a.idx - b.idx)
+      .map(l => l.name);
+  } catch {
+    return [];
+  }
+}
+
 function parseStatusLabels(settingsStr: string | null | undefined): Set<string> {
   if (!settingsStr) return new Set();
   try {
@@ -289,6 +314,12 @@ async function discoverBoardColumns(boardId: number): Promise<ColumnMap> {
   if (!division) division = statuses.find(s => /division/i.test(s.title))?.id ?? null;
   if (!category) category = statuses.find(s => /category/i.test(s.title))?.id ?? null;
 
+  // Read the labels actually defined on the discovered Category column so the
+  // picker reflects this board's own set (in board order) rather than the
+  // bundled fallback list.
+  const categoryCol = statuses.find(s => s.id === category);
+  const categoryOptions = categoryCol ? parseStatusLabelsOrdered(categoryCol.settings_str) : null;
+
   if (!client) {
     // Freelancer boards: a plain status or dropdown column titled "Client"
     // stands in for the org Clients board connection; its labels become the
@@ -318,7 +349,8 @@ async function discoverBoardColumns(boardId: number): Promise<ColumnMap> {
     date: singleId('date'),
     timeTracking: singleId('time_tracking'),
     division,
-    category
+    category,
+    categoryOptions: categoryOptions && categoryOptions.length ? categoryOptions : null
   };
 }
 
@@ -467,6 +499,19 @@ export async function listClientsForBoard(boardId: number): Promise<ClientList> 
   const cols = await getBoardCols(boardId);
   if (cols.clientType === 'board_relation') return listClients();
   return cols.clientOptions ?? []; // status/dropdown labels; [] when no client column
+}
+
+// Categories for the picker, read from the user's own time-tracker board so
+// each board can define its own set. Falls back to the bundled CATEGORIES list
+// when the board's Category column can't be read or has no labels yet.
+export async function listCategoriesForBoard(boardId: number): Promise<string[]> {
+  try {
+    const cols = await getBoardCols(boardId);
+    if (cols.categoryOptions && cols.categoryOptions.length) return cols.categoryOptions;
+  } catch {
+    // fall through to the bundled list
+  }
+  return [...CATEGORIES];
 }
 
 // ---------------------------------------------------------------------------
@@ -878,7 +923,6 @@ export async function recentEntries(
 
 export type Stats = {
   streak: number;
-  categoryMinutes: Record<string, number>;
 };
 
 function localIso(d: Date): string {
@@ -914,14 +958,10 @@ export function computeStreak(loggedDates: Set<string>): number {
 export async function getStats(boardId: number): Promise<Stats> {
   const entries = await recentEntries(boardId, 90);
   const loggedDates = new Set<string>();
-  const categoryMinutes: Record<string, number> = {};
   for (const e of entries) {
     if (e.date) loggedDates.add(e.date);
-    if (e.category && e.minutes > 0) {
-      categoryMinutes[e.category] = (categoryMinutes[e.category] || 0) + e.minutes;
-    }
   }
-  return { streak: computeStreak(loggedDates), categoryMinutes };
+  return { streak: computeStreak(loggedDates) };
 }
 
 export type LastLogStatus = {

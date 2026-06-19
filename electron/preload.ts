@@ -11,6 +11,7 @@ const api = {
   openBoard: () => ipcRenderer.invoke('monday:openBoard'),
   listClients: () => ipcRenderer.invoke('monday:clients'),
   listCreatives: () => ipcRenderer.invoke('monday:creatives'),
+  listCategories: (): Promise<string[]> => ipcRenderer.invoke('monday:categories'),
   creativesEnabled: () => ipcRenderer.invoke('monday:creativesEnabled'),
   clientsEnabled: () => ipcRenderer.invoke('monday:clientsEnabled'),
   listTimeTrackerBoards: () => ipcRenderer.invoke('monday:listTimeTrackerBoards'),

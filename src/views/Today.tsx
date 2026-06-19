@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import { swan } from '../lib/swan';
 import { Picker } from '../components/Picker';
-import { CATEGORIES, DIVISIONS, Client, Creative } from '../lib/constants';
+import { DIVISIONS, Client, Creative } from '../lib/constants';
+import { useCategories } from '../lib/useCategories';
 import { clientForCreative, creativeMatchesClient, creativesForClient } from '../lib/creatives';
 import { minutesToHm } from '../lib/format';
 import { flagEntry } from '../lib/flags';
-import { levelFor } from '../lib/levels';
-import { LevelPill } from '../components/LevelPill';
 
 type Entry = {
   id: number;
@@ -63,11 +62,10 @@ function dateLabel(iso: string): string {
 type Props = { onClose: () => void };
 
 export function Today({ onClose }: Props) {
+  const categories = useCategories();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [aiOn, setAiOn] = useState(false);
-  const [levelsOn, setLevelsOn] = useState(true);
-  const [categoryMinutes, setCategoryMinutes] = useState<Record<string, number>>({});
   const [clients, setClients] = useState<Client[]>([]);
   const [clientsOn, setClientsOn] = useState(false);
   const [creatives, setCreatives] = useState<Creative[]>([]);
@@ -93,9 +91,7 @@ export function Today({ onClose }: Props) {
     load();
     swan.getSettings().then(s => {
       setAiOn(s.aiEnabled);
-      setLevelsOn(s.levelsEnabled !== false);
     });
-    swan.getStats().then(s => setCategoryMinutes(s.categoryMinutes)).catch(() => {});
     swan.clientsEnabled().then((on: boolean) => {
       if (!on) return;
       setClientsOn(true);
@@ -165,7 +161,6 @@ export function Today({ onClose }: Props) {
     }
     cancelEdit();
     await load();
-    swan.getStats().then(s => setCategoryMinutes(s.categoryMinutes)).catch(() => {});
   }
 
   async function del(id: number) {
@@ -282,13 +277,8 @@ export function Today({ onClose }: Props) {
                     <Picker
                       label="Category"
                       value={draft!.category}
-                      options={CATEGORIES.map(c => ({ id: c, label: c }))}
+                      options={categories.map(c => ({ id: c, label: c }))}
                       onChange={(_, l) => setDraft(d => d && { ...d, category: l })}
-                      optionMeta={
-                        levelsOn
-                          ? (_, label) => <LevelPill level={levelFor(categoryMinutes[label] || 0)} />
-                          : undefined
-                      }
                     />
                   </div>
                   <div className="flex items-center gap-2">
@@ -383,16 +373,8 @@ export function Today({ onClose }: Props) {
                   title="Edit entry"
                 >
                   <div className="text-[13px] text-ink truncate">{e.name}</div>
-                  <div className="text-[11px] text-mute truncate flex items-center gap-1.5">
-                    <span className="truncate">
-                      {[e.clientName, e.creativeName, e.division, e.category].filter(Boolean).join(' · ') || '—'}
-                    </span>
-                    {levelsOn && e.category && (
-                      <LevelPill
-                        level={levelFor(categoryMinutes[e.category] || 0)}
-                        title={`Lv ${levelFor(categoryMinutes[e.category] || 0)} in ${e.category}`}
-                      />
-                    )}
+                  <div className="text-[11px] text-mute truncate">
+                    {[e.clientName, e.creativeName, e.division, e.category].filter(Boolean).join(' · ') || '—'}
                   </div>
                   {flags.map((f, i) => (
                     <div

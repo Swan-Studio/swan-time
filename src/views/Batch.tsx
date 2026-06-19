@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { swan } from '../lib/swan';
 import { Picker } from '../components/Picker';
-import { CATEGORIES, DIVISIONS, Client, Creative } from '../lib/constants';
+import { DIVISIONS, Client, Creative } from '../lib/constants';
+import { useCategories } from '../lib/useCategories';
 import { clientForCreative, creativeMatchesClient, creativesForClient } from '../lib/creatives';
 import { minutesToHm } from '../lib/format';
-import { levelFor } from '../lib/levels';
-import { LevelPill } from '../components/LevelPill';
 
 type Row = {
   id: string;
@@ -68,6 +67,7 @@ function newRow(partial: Partial<Row> = {}): Row {
 type Props = { onClose: () => void };
 
 export function Batch({ onClose }: Props) {
+  const categories = useCategories();
   const [text, setText] = useState('');
   const [primaryDivision, setPrimaryDivision] = useState<string | undefined>();
   const [rows, setRows] = useState<Row[]>([newRow()]);
@@ -76,8 +76,6 @@ export function Batch({ onClose }: Props) {
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [creativesOn, setCreativesOn] = useState(false);
   const [todayLoggedMinutes, setTodayLoggedMinutes] = useState(0);
-  const [levelsOn, setLevelsOn] = useState(true);
-  const [categoryMinutes, setCategoryMinutes] = useState<Record<string, number>>({});
   const [aiState, setAiState] = useState<{ enabled: boolean; hasKey: boolean }>({
     enabled: false,
     hasKey: false
@@ -113,7 +111,6 @@ export function Batch({ onClose }: Props) {
       .aiStatus()
       .then(s => setAiState({ enabled: s.aiEnabled, hasKey: s.hasUserKey || s.hasSharedKey }));
     swan.getSettings().then(s => {
-      setLevelsOn(s.levelsEnabled !== false);
       if (s.primaryDivision) {
         setPrimaryDivision(s.primaryDivision);
         // Default the existing first row to the primary division.
@@ -122,7 +119,6 @@ export function Batch({ onClose }: Props) {
         );
       }
     });
-    swan.getStats().then(s => setCategoryMinutes(s.categoryMinutes)).catch(() => {});
     refreshTodayLogged();
     setTimeout(() => textRef.current?.focus(), 100);
   }, []);
@@ -441,13 +437,8 @@ export function Batch({ onClose }: Props) {
               <Picker
                 label="Category"
                 value={r.category}
-                options={CATEGORIES.map(c => ({ id: c, label: c }))}
+                options={categories.map(c => ({ id: c, label: c }))}
                 onChange={(_, l) => update(r.id, { category: l })}
-                optionMeta={
-                  levelsOn
-                    ? (_, label) => <LevelPill level={levelFor(categoryMinutes[label] || 0)} />
-                    : undefined
-                }
               />
               <input
                 type="number"
